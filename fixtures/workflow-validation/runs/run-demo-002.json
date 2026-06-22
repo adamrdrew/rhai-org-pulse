@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "1.0",
+  "key": "run-demo-002",
+  "timestamp": "2026-06-08T09:15:00Z",
+  "cluster": {
+    "rhoaiVersion": "3.5.0-ea.3",
+    "ocpVersion": "4.17.12"
+  },
+  "summary": {
+    "totalWorkflows": 4,
+    "passed": 3,
+    "failed": 1,
+    "skipped": 0,
+    "passRate": 0.75
+  },
+  "cost": {
+    "performerTotal_usd": 6.90
+  },
+  "rootCauses": [
+    {
+      "category": "FLAKY_TEST",
+      "errorSummary": "Intermittent timeout waiting for model endpoint readiness",
+      "action": { "type": "EXISTING", "jiraKey": "AIPCC-17100" },
+      "impactedWorkflows": ["llm-serving-agentic-ai"]
+    }
+  ],
+  "workflows": [
+    {
+      "name": "llm-serving-agentic-ai",
+      "trendKey": "llm-serving-agentic-ai@3.5",
+      "result": "FAIL",
+      "performer": { "turns": 14, "costUsd": 3.20, "duration_s": 680 }
+    },
+    {
+      "name": "llm-serving-basic",
+      "trendKey": "llm-serving-basic@3.5",
+      "result": "PASS",
+      "performer": { "turns": 6, "costUsd": 1.05, "duration_s": 295 }
+    },
+    {
+      "name": "gpu-workload-test",
+      "trendKey": "gpu-workload-test@3.5",
+      "result": "PASS",
+      "performer": { "turns": 10, "costUsd": 1.55, "duration_s": 420 }
+    },
+    {
+      "name": "notebook-spawner",
+      "trendKey": "notebook-spawner@3.5",
+      "result": "PASS",
+      "performer": { "turns": 4, "costUsd": 1.10, "duration_s": 165 }
+    }
+  ]
+}
