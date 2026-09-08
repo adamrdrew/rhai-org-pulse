@@ -2,6 +2,21 @@
 
 This document describes the JSON structure of all files stored in the `data/` directory (production) and `fixtures/` directory (demo mode). **Demo fixtures must always match production format** — see [Fixture Rules](#fixture-rules) below.
 
+## Jira Autofix — `data/ai-impact/autofix-data.json`
+
+The Autofix snapshot keeps the existing `issues` pipeline-labeled cohort and
+adds `policyEligibleIssues`, the gross Bug cohort returned by the separate
+policy query. The gross query excludes CVE summary or label markers and
+embargoed issues. It does not exclude closed status or mutable opt-out labels.
+`currentPolicyEligibleIssues` is a separate current non-excluded snapshot that
+removes current `no-autofix`, `auto-created`, and `CVE` labels. It is a
+diagnostic snapshot, not a historical eligibility denominator.
+
+`metrics.stageFunnel` reports eligible, analyzed, PR proposed, PR merged,
+abandonment, and conversions. Its `authoritative` flag is true only when
+canonical immutable events from the AIPCC-31384 Autofix outcome contract are
+available. Jira label and Forge-link fallbacks are explicitly non-authoritative.
+
 ## Person Metrics — `data/people/{name}.json`
 
 Filename is the person's display name lowercased with non-alphanumeric chars replaced by `_`.
@@ -429,13 +444,18 @@ Stores all in-app managed teams. Created when `teamDataSource` is set to `"in-ap
 
 ## Allocation Data — `data/allocation/`
 
+> **Provided by the `platform/allocation/` extension.** Allocation was removed
+> from `@org-pulse/core` in v2.0.61; this consumer re-homes it as a
+> self-contained platform extension (see `docs/PLATFORM.md` → Allocation). Core
+> itself writes no allocation data.
+
 Sprint allocation data is stored under `data/allocation/` with an `allocation/` storage prefix. Key files:
 
 - `allocation/sprints/{sprintId}.json` — Per-sprint issue classification data
 - `allocation/summaries/{teamKey}.json` — Aggregated team allocation summary
 - `allocation/org/{orgKey}.json` — Org-level allocation summary
 
-Sprint data files include a `strategyId` field that records which allocation strategy was used for classification. When the strategy changes (different `id` in `platform/allocation-strategy/manifest.json`), cached closed sprint data is invalidated and re-classified on next refresh.
+Sprint data files include a `strategyId` field that records which allocation strategy was used for classification. When the strategy changes (different `id` in `platform/allocation/manifest.json`'s `strategy` block), cached closed sprint data is invalidated and re-classified on next refresh.
 
 ```json
 {
@@ -454,7 +474,7 @@ Sprint data files include a `strategyId` field that records which allocation str
 }
 ```
 
-Bucket keys are dynamic — they come from the active allocation strategy's `categories[].key` values plus a built-in `uncategorized` key. When no allocation strategy is configured (`platform/allocation-strategy/` absent), allocation features are hidden and no data is written.
+Bucket keys are dynamic — they come from the active allocation strategy's `categories[].key` values plus a built-in `uncategorized` key. When the `platform/allocation/` extension is absent, allocation features are hidden and no data is written.
 
 ## Field Definitions — `data/team-data/field-definitions.json`
 
@@ -1376,6 +1396,31 @@ Admin-configurable settings for GitLab CI artifact fetching and Jira sync.
 - `artifactPath` is the directory prefix stripped from zip entry paths (e.g., `output/index.json` becomes `index.json`).
 - `jiraEnrichment.enabled` enables periodic Jira sync of feature data (12h default cadence). The sync fetches all RHAISTRAT features from Jira as the authoritative source.
 
+## Releases — Feature Tracking Config (`data/releases/execution/feature-tracking-config.json`)
+
+Gear settings for the Execute workspace: portfolio version names, per-product Jira fixVersion strings, and optional planning-freeze overrides.
+
+```json
+{
+  "releases": {
+    "3.5.EA1": {
+      "products": {
+        "rhoai": "rhoai-3.5.EA1",
+        "rhelai": "rhelai-3.5.EA1",
+        "rhaii": "rhaii-3.5.EA1"
+      },
+      "planningFreezeOverride": "2026-04-17"
+    }
+  }
+}
+```
+
+**Notes:**
+- Keys under `releases` are portfolio versions shown as Execute version chips, ordered by planning freeze date (earliest first). User `planningFreezeOverride` wins over Product Pages.
+- `products` maps family (`rhoai` / `rhelai` / `rhaii`) to the Jira fixVersion name used for hygiene and execution lookups.
+- `planningFreezeOverride` is an optional `YYYY-MM-DD` date; when set it wins over Product Pages.
+- Per-version tracking data is cached at `data/releases/execution/tracking-data-<version>.json` (e.g. `tracking-data-3.5.EA1.json`); in demo mode these fixtures back the Execute workspace. Keep the chip versions here aligned with the Schedule-view timeline (`releases/delivery/product-pages-releases-cache.json`) so timeline card deep-links land on a populated Execute pill.
+
 ## Releases — Execution Last Enrichment (`data/releases/execution/last-enrichment.json`)
 
 Metadata from the most recent Jira sync.
@@ -1487,10 +1532,11 @@ Generated by the health pipeline (`runHealthPipeline()`). Version 4 adds FPDoR r
 | `summary.fpdorReadiness.fullyPassed` | number | v4 | Features where all evaluated FPDoR items passed (`evaluatedCount >= 6`). |
 | `summary.fpdorReadiness.totalFeatures` | number | v4 | Total features assessed. |
 | `features[].fpdor` | object / null | v4 | Per-feature FPDoR (Feature Planning Definition of Readiness) result. |
-| `features[].fpdor.items[]` | array | v4 | Array of 13 `{ name, pass, source, state, detail }` objects. `pass`: `true`/`false`/`null`; `source`: `"jira"`; `state`: `"passed"`, `"failed"`, or `"not-checked"` (when `pass` is `null`, e.g. Documentation with no release type and docs not assessed). |
-| `features[].fpdor.passedCount` | number | v4 | Items where `pass === true`. |
+| `features[].fpdor.items[]` | array | v4 | Array of 17 `{ name, pass, source, state, detail, group }` objects. `pass`: `true`/`false`/`null`; `source`: `"jira"`; `state`: `"passed"`, `"failed"`, `"not-applicable"` (N/A items count as pass), or `"not-checked"` (legacy; should not appear for current evaluators). |
+| `features[].fpdor.passedCount` | number | v4 | Items where `pass === true` (includes N/A items). |
 | `features[].fpdor.evaluatedCount` | number | v4 | Items where `pass !== null`. |
-| `features[].fpdor.totalCount` | number | v4 | Always 13. |
+| `features[].fpdor.applicableCount` | number | v4 | Always 17 — fixed checklist denominator (same as `totalCount`). |
+| `features[].fpdor.totalCount` | number | v4 | Always 17. |
 
 **Planning check IDs:**
 
@@ -1561,6 +1607,69 @@ JSON Lines format (one JSON object per line). Partitioned by month for efficient
 
 ---
 
+## Releases — RHOAI Component Architectures (`data/releases/rhoai-component-architectures/latest.json`)
+
+Multi-architecture build support matrix for RHOAI components across release branches. Fetched from pre-generated `multi-arch-report.yaml` files in the `red-hat-data-services/konflux-central` repo.
+
+```json
+{
+  "fetchedAt": "2026-08-18T12:00:00.000Z",
+  "source": { "owner": "red-hat-data-services", "repo": "konflux-central" },
+  "maturity": {
+    "available": true,
+    "fetchedAt": "2026-08-18T12:00:00.000Z",
+    "warning": null,
+    "allProductComponents": [
+      { "name": "AI Core Dashboard", "owner": null, "team": null },
+      { "name": "AI Pipelines", "owner": null, "team": null },
+      { "name": "Serving Orchestration", "owner": "jdoe", "team": "Model Serving" }
+    ]
+  },
+  "branches": {
+    "rhoai-3.5": {
+      "generatedAt": "2026-08-18T10:00:00.000Z",
+      "branch": "rhoai-3.5",
+      "architectures": ["amd64", "arm64", "ppc64le", "s390x"],
+      "components": [
+        {
+          "name": "odh-dashboard",
+          "imageName": "odh-dashboard-rhel9",
+          "image": "quay.io/rhoai/odh-dashboard-rhel9",
+          "productComponent": "AI Core Dashboard",
+          "architectures": {
+            "amd64": { "status": "supported" },
+            "arm64": { "status": "supported" },
+            "ppc64le": { "status": "exception", "issueKey": "RHOAIENG-38736", "issueUrl": "https://issues.redhat.com/browse/RHOAIENG-38736", "reason": "ppc64le enablement" },
+            "s390x": { "status": "incompatible", "accelerator": "cuda" }
+          }
+        }
+      ],
+      "summary": {
+        "totalComponents": 15,
+        "fullMultiArch": 7,
+        "withExceptions": 4,
+        "withIncompatible": 3,
+        "withNotBuilt": 1
+      }
+    }
+  }
+}
+```
+
+**Notes:**
+- `fetchedAt` is the ISO timestamp when the data was last fetched from GitHub.
+- `source` identifies the GitHub repository containing the report YAML files.
+- `branches` is keyed by release branch name (e.g., `rhoai-3.5`). Up to 3 most recent branches are fetched.
+- `name` is the display name (RHEL suffix stripped via `stripRhelSuffix()`). `imageName` is the original name including the RHEL suffix.
+- `image` is the full Quay.io image reference.
+- Architecture status is one of: `"supported"` (built), `"exception"` (tracked Jira), `"incompatible"` (hardware-dependent), `"not_built"` (gap).
+- `exception` entries include `issueKey`, `issueUrl`, and `reason`. `incompatible` entries include `accelerator`.
+- `productComponent` is the parent product component name from the maturity report (e.g., `"Serving Orchestration"`). `null` when no mapping exists ("unmapped").
+- `maturity` contains metadata about the component maturity mapping from `gitlab.cee.redhat.com/data-hub/component-maturity`. `available` indicates whether the mapping was successfully fetched. `allProductComponents` is the complete sorted list of product component objects from the maturity report: `[{ "name": "...", "owner": "..." or null, "team": "..." or null }]`. Owner and team are extracted defensively from the upstream maturity report (null if absent). For backward compatibility, the frontend also accepts string entries and normalizes them to `{ name: entry, owner: null, team: null }`. `warning` is set when the mapping fetch failed or was skipped.
+- `summary` provides pre-computed counts per branch for the UI summary cards.
+
+---
+
 ## Releases — Hygiene Features (`data/releases/hygiene/features-{version}.json`)
 
 Per-release hygiene compliance data. Generated by the hygiene refresh handler, which fetches features from Jira and evaluates them against enabled hygiene rules.
@@ -1579,6 +1688,11 @@ Per-release hygiene compliance data. Generated by the hygiene refresh handler, w
       "assignee": "Jane Doe",
       "team": "Model Serving",
       "fixVersions": ["RHOAI-2.14"],
+      "targetVersions": ["RHOAI-2.14"],
+      "targetReleaseId": "rhoai-2.14",
+      "fixReleaseId": "rhoai-2.14",
+      "effectiveReleaseId": "rhoai-2.14",
+      "missingTargetVersion": false,
       "components": ["serving-runtime"],
       "labels": ["GPU-as-a-Service"],
       "releaseType": "GA",
@@ -1612,9 +1726,61 @@ Per-release hygiene compliance data. Generated by the hygiene refresh handler, w
 - `assignee` is a display name string or `null`
 - `violations` is an array of rule violations found by `evaluateHygiene()`. Empty array `[]` when the feature passes all rules
 - Each violation has: `id` (rule identifier, e.g. `"missing-assignee"`), `name` (human label), `category` (`"ownership"`, `"timeliness"`, `"metadata"`, or `"lifecycle"`), `message` (contextual sentence), `remediation` (action guidance)
+- **Version fields:** `fixVersions` is the delivery commitment (engineering); `targetVersions` is the original ask (PM). `targetReleaseId` / `fixReleaseId` resolve those Jira version names to registry release ids; `effectiveReleaseId` is the single release the feature is stored under — **Fix Version wins over Target Version** when it resolves to an active release, otherwise Target Version is used as a fallback. A feature is stored under exactly one release file (its `effectiveReleaseId`).
+- `missingTargetVersion` is `true` when a Feature/Initiative has a Fix Version but no Target Version (drives the `missing-target-version` rule). When both are set but resolve to different releases in a later phase (In Progress/Review/Testing/Release Pending/Resolved/Closed), the `target-fix-version-mismatch` rule fires.
 - `statusEnteredAt` and `statusSummaryUpdated` are ISO 8601 timestamps used by timeliness rules
 - `linkedRfeApproved` is `true` only when the feature has a `clones` link to an RFE in Approved status
 - File path uses the version display name (may contain spaces, e.g. `features-RHOAI 2.14.json`)
+
+## Releases — Release Readiness (`data/releases/release-readiness/{version}.json`)
+
+Pre-generated release readiness metrics served (and versioned) by
+`modules/releases/server/release-readiness/routes.js`, which only reads/writes
+this file — the payload itself is produced outside this repo by the external
+`fetch_release_metrics.py` script and pushed via its `POST /upload` endpoint.
+Rendered by `modules/releases/client/reports/ReleaseReadinessDirector.vue`.
+
+```json
+{
+  "version": "rhoai-3.5.EA2",
+  "generated_at": "2026-07-01T10:00:00Z",
+  "director_summary": {
+    "gate_statuses": [
+      { "gate": "Test Execution", "done": 23, "total": 24, "pct": 96, "rag": "GREEN", "initiative_key": "RHOAIENG-68791" }
+    ],
+    "test_timeline": [
+      {
+        "epic_key": "RHOAIENG-70001",
+        "name": "Nightly",
+        "done": 12,
+        "total": 12,
+        "pct": 100,
+        "rag": "GREEN"
+      }
+    ]
+  },
+  "breakdowns": {
+    "RHOAIENG-68791": {
+      "test_execution": {
+        "phases": [
+          {
+            "epic_key": "RHOAIENG-70001",
+            "tasks": [
+              { "key": "RHOAIENG-70101", "summary": "Nightly smoke tests", "status": "Done", "status_category": "Done", "resolution": "Done" }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+**Notes:**
+- `test_timeline` entries are the Epics shown as accordion rows in the "Test Execution Phases" section; `breakdowns.*.test_execution.phases[*].tasks` are the child tasks shown when a row is expanded. `test_timeline` rows only render a generic `Done`/`Active`/`Pending` badge derived from `rag` — Resolution is only surfaced for the child tasks, not the Epic itself.
+- Task objects carry the Jira `status`/`status_category` and `resolution` (same semantics as `resolution` in [Person Metrics](#person-metrics--datapeoplenamejson): the raw Jira resolution name, or `null`/absent while unresolved).
+- The UI renders a task's label as `<Status> - <Resolution>` (e.g. `"Done - Won't Do"`) whenever `resolution` is set, falling back to just `<Status>` otherwise; `resolution` is optional — older payloads without it still render using `status` alone.
+- No-work resolutions (`"Won't Do"`, `"Can't Do"`, `"Obsolete"`, `"Duplicate"`, `"Cannot Reproduce"`) are rendered in a muted/gray style instead of green, even when `status_category` is `"Done"`, since the work itself wasn't completed.
 
 ## System Health — Disconnected Readiness Reports (`data/system-health/disconnected/reports.json`)
 
@@ -1709,6 +1875,233 @@ Disconnected readiness reports tracking repository readiness scores for disconne
 - `ruleCount`: Total rules evaluated
 - `rulesPassedCount`: Rules that passed
 - `date`: Assessment timestamp
+
+## System Health — E2E Health Data (`data/system-health/odh-e2e-health.json`)
+
+E2E (end-to-end) test health data for the opendatahub-operator repository. Contains recent test runs, component failure statistics, and historical trends. Updated hourly by the E2E health scheduler.
+
+```json
+{
+  "lastSyncedAt": "2026-08-11T14:30:00.000Z",
+  "repository": "opendatahub-io/opendatahub-operator",
+  "suites": {
+    "odh": {
+      "name": "OpenDataHub E2E",
+      "suite": "odh", 
+      "dailyStatus": {
+        "status": "healthy",
+        "color": "green",
+        "class": "text-green-600 dark:text-green-400",
+        "bgClass": "bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400",
+        "label": "Healthy"
+      },
+      "totalJobs": 42,
+      "passedJobs": 38,
+      "rollingWindow": "14d",
+      "lastUpdated": "2026-08-11T14:30:00.000Z",
+      "suiteStatus": "passing",
+      "successRate": 0.9,
+      "repository": "opendatahub-io/opendatahub-operator"
+    },
+    "rhoai": {
+      "name": "RHOAI E2E",
+      "suite": "rhoai",
+      "dailyStatus": {
+        "status": "degraded",
+        "color": "orange", 
+        "class": "text-orange-600 dark:text-orange-400",
+        "bgClass": "bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400",
+        "label": "Degraded"
+      },
+      "totalJobs": 25,
+      "passedJobs": 18,
+      "rollingWindow": "14d",
+      "lastUpdated": "2026-08-11T14:30:00.000Z",
+      "suiteStatus": "failing",
+      "successRate": 0.72,
+      "repository": "opendatahub-io/opendatahub-operator"
+    }
+  },
+  "summary": {
+    "totalRuns": 120,
+    "passRate": 0.85,
+    "avgResolutionTime": "4h 30m",
+    "trendDirection": "improving"
+  },
+  "recentRuns": [
+    {
+      "buildId": "1723387200123",
+      "jobName": "periodic-ci-opendatahub-io-opendatahub-operator-main-odh-e2e", 
+      "suite": "odh",
+      "status": "passed",
+      "timestamp": "2026-08-11T12:00:00.000Z",
+      "prNumber": null,
+      "prowUrl": "https://prow.ci.openshift.org/view/gs/origin-ci-test/logs/periodic-ci-opendatahub-io-opendatahub-operator-main-odh-e2e/1723387200123",
+      "failedComponents": [],
+      "runDuration": 1800
+    }
+  ],
+  "accumulatedRuns": [],
+  "componentStats": {
+    "dashboard": {
+      "totalRuns": 120,
+      "failures": 8,
+      "lastFailure": "2026-08-10T16:30:00.000Z",
+      "affectedSuites": ["odh", "rhoai"],
+      "failureRate": 0.067,
+      "consecutiveFailures": 0,
+      "classification": "ui",
+      "impact": {
+        "score": 65,
+        "level": "medium"
+      },
+      "trends": {
+        "direction": "stable"
+      },
+      "displayName": "Dashboard",
+      "testSuites": ["odh", "rhoai"]
+    }
+  },
+  "currentlyBlocking": ["kserve"],
+  "assessedAt": "2026-08-11T14:30:00.000Z",
+  "dataSource": "prowjobs-api-incremental",
+  "datasetMetadata": {
+    "accumulatedRunsCount": 120,
+    "recentRunsCount": 15,
+    "dataRetentionDays": 30,
+    "oldestRunDate": "2026-07-12T14:30:00.000Z", 
+    "newestRunDate": "2026-08-11T14:30:00.000Z"
+  },
+  "historical_trends": {
+    "daily_status": [
+      {
+        "date": "2026-08-11",
+        "odh": {
+          "status": "healthy",
+          "passRate": 0.9,
+          "totalJobs": 42,
+          "passedJobs": 38
+        },
+        "rhoai": {
+          "status": "degraded", 
+          "passRate": 0.72,
+          "totalJobs": 25,
+          "passedJobs": 18
+        }
+      }
+    ],
+    "last_updated": "2026-08-11T14:30:00.000Z"
+  }
+}
+```
+
+**Top-level fields:**
+- `lastSyncedAt`: ISO timestamp of the last data refresh
+- `repository`: Target repository being monitored
+- `suites`: Test suite health summary (keyed by suite name: `odh`, `rhoai`)
+- `summary`: Overall E2E health metrics across all suites
+- `recentRuns`: Latest test runs from the current API fetch (~48 hours of data)
+- `accumulatedRuns`: Full dataset of test runs (30-day retention for historical analysis)
+- `componentStats`: Component failure statistics and analysis
+- `currentlyBlocking`: Components currently causing test failures
+- `assessedAt`: ISO timestamp when the assessment was performed
+- `dataSource`: Data source identifier (e.g., `prowjobs-api-incremental`)
+- `datasetMetadata`: Metadata about the accumulated dataset
+- `historical_trends`: Daily status trends for charting (30-day retention)
+
+**Suite health fields:**
+- `dailyStatus.status`: Overall suite health (`healthy`, `stable`, `degraded`, `failing`, `broken`)
+- `dailyStatus.color`: Color indicator (`green`, `orange`, `red`)
+- `dailyStatus.class`/`bgClass`: Tailwind CSS classes for styling
+- `successRate`: Pass rate (0.0 to 1.0) for the rolling window
+- `suiteStatus`: Legacy status field (`passing` or `failing`)
+
+**Test run fields:**
+- `buildId`: Unique identifier for the test run
+- `jobName`: Prow CI job name  
+- `suite`: Test suite name (`odh` or `rhoai`)
+- `status`: Test result (`passed`, `failed`, `pending`, `triggered`)
+- `timestamp`: ISO timestamp when the test ran
+- `prNumber`: Pull request number if applicable, or `null`
+- `prowUrl`: Link to the Prow CI job details
+- `failedComponents`: Array of component names that failed in this run
+- `runDuration`: Test execution time in seconds
+
+**Component statistics fields:**
+- `totalRuns`: Total number of test runs analyzed
+- `failures`: Number of runs where this component failed
+- `failureRate`: Failure rate (0.0 to 1.0)
+- `consecutiveFailures`: Number of consecutive recent failures
+- `lastFailure`: ISO timestamp of the most recent failure
+- `affectedSuites`: Array of suite names where this component has failed
+- `classification`: Component type classification (e.g., `ui`, `api`, `backend`)
+- `impact.score`: Numeric impact score (0-100)
+- `impact.level`: Impact level (`low`, `medium`, `high`)
+- `trends.direction`: Trend direction (`improving`, `stable`, `worsening`)
+
+**Historical trends fields:**
+- `daily_status`: Array of daily status snapshots, sorted newest-first
+- `date`: Date in YYYY-MM-DD format
+- Per-suite status includes: `status`, `passRate`, `totalJobs`, `passedJobs`
+- `last_updated`: ISO timestamp when trends were last calculated
+
+**Notes:**
+- Data is updated hourly by the E2E health scheduler
+- Recent runs contain ~48 hours of data for operational visibility
+- Accumulated runs contain up to 30 days of data for trend analysis
+- Pending/triggered tests are filtered out during storage
+- Component statistics use 30-day accumulated data for accurate failure rates
+- Daily status thresholds: 100% = healthy, ≥70% = stable, ≥50% = degraded, ≥20% = failing, <20% = broken
+
+## System Health — E2E Blocker JIRAs (`data/system-health/odh-e2e-blocker-jiras.json`)
+
+Snapshot of the currently-open Jira blocker bugs auto-filed by the
+opendatahub-operator `e2e-failure-triage` automation. The automation labels every
+bug it creates with `odh-operator-auto-e2e-blocker` (in project `RHOAIENG`) and
+links it to the template issue `RHOAIENG-79740`. The `odh-e2e-blocker-jiras`
+refresh handler queries Jira for open (`resolution = Unresolved`) issues carrying
+that label and writes a full snapshot.
+
+```json
+{
+  "lastSyncedAt": "2026-08-11T10:00:00.000Z",
+  "available": true,
+  "count": 3,
+  "jql": "project = RHOAIENG AND labels = \"odh-operator-auto-e2e-blocker\" AND resolution = Unresolved ORDER BY created DESC",
+  "jqlUrl": "https://redhat.atlassian.net/issues/?jql=...",
+  "templateIssue": "RHOAIENG-79740",
+  "issues": [
+    {
+      "key": "RHOAIENG-81234",
+      "summary": "[Auto] E2E blocker: dashboard tests failing",
+      "status": "New",
+      "priority": "Blocker",
+      "component": "Dashboard",
+      "affectsVersions": ["2.20 GA RHOAI RELEASE"],
+      "assignee": null,
+      "created": "2026-08-10T14:22:00.000Z",
+      "updated": "2026-08-11T08:15:00.000Z",
+      "url": "https://redhat.atlassian.net/browse/RHOAIENG-81234"
+    }
+  ]
+}
+```
+
+**Top-level fields:**
+- `lastSyncedAt`: ISO timestamp of the last successful fetch (may be preserved from a prior run on a failed refresh)
+- `available`: `false` when Jira credentials are missing or a fetch failed; `true` otherwise
+- `reason`: present when `available` is false (`missing-credentials`, `fetch-error`, or `no_data`)
+- `count`: number of open blocker issues
+- `jql` / `jqlUrl`: the JQL used and a deep link to view the issues in Jira
+- `templateIssue`: the clone template key (`RHOAIENG-79740`)
+- `issues`: array of open blocker issues (see per-issue fields below)
+
+**Per-issue fields:** `key`, `summary`, `status`, `priority`, `component` (comma-joined), `affectsVersions` (array), `assignee` (display name or null), `created`, `updated`, `url`.
+
+**Notes:**
+- Refreshed hourly by the `odh-e2e-blocker-jiras` handler. Requires the `jira` platform secret group (`JIRA_EMAIL` / `JIRA_TOKEN`).
+- **Snapshot semantics:** each successful run fully overwrites the file with the current open set — no merge/accumulate — so JIRAs resolved/closed since the last run are evicted automatically.
+- On a transient fetch failure the previous `issues` are preserved and `available` is set to `false` (the dashboard keeps showing last-known-good data). Missing credentials writes an empty list.
 
 ## System Health — Quality Reports (`data/system-health/quality/reports.json`)
 

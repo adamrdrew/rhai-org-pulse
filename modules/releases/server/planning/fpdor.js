@@ -14,7 +14,7 @@ var MANDATORY_ITEMS = [
   'PM',
   'Delivery Owner',
   'Priority',
-  'RICE (4 dims)',
+  'RICE',
   'Docs impact'
 ]
 
@@ -57,8 +57,17 @@ function hasLabelPrefix(feature, prefix) {
   return false
 }
 
+/**
+ * Trust rp-qg1-pass only when bot-verified.
+ *
+ * A bare label can be hand-applied in Jira; Org Pulse must not treat that as
+ * evidence for FPDoR shortcuts. Set feature.qg1PassVerified=true only when a
+ * Quality Gate bot comment with QG1-FP backs the label (enrichment / future
+ * gate-artifact ingest). Until then, field and strat-creator checks decide.
+ */
 function hasRpQg1Pass(feature) {
-  return hasLabel(feature, 'rp-qg1-pass')
+  if (!hasLabel(feature, 'rp-qg1-pass')) return false
+  return feature.qg1PassVerified === true
 }
 
 function hasStratCreatorRubricPass(feature) {
@@ -215,6 +224,21 @@ function evalItem(name, passed, detail, group) {
   }
 }
 
+/**
+ * Item does not apply to this feature — counts as pass for readiness and the
+ * fixed 17-item denominator (aligned with QG1 ``not_applicable`` checks).
+ */
+function naPassItem(name, detail, group) {
+  return {
+    name: name,
+    pass: true,
+    source: 'jira',
+    state: 'not-applicable',
+    group: group || 'criteria',
+    detail: detail || 'N/A'
+  }
+}
+
 function passViaLabel(name, label, group) {
   return evalItem(name, true, 'Passed via ' + label, group)
 }
@@ -269,10 +293,10 @@ function evalPriority(feature) {
 }
 
 function evalRice(feature) {
-  if (hasRiceScore(feature)) return passViaField('RICE (4 dims)', 'Passed via RICE score', 'mandatory')
-  if (hasRpQg1Pass(feature)) return passViaLabel('RICE (4 dims)', 'rp-qg1-pass', 'mandatory')
-  if (feature.riceScore == null) return evalItem('RICE (4 dims)', false, 'No RICE score in Jira', 'mandatory')
-  return evalItem('RICE (4 dims)', false, 'RICE score is 0', 'mandatory')
+  if (hasRiceScore(feature)) return passViaField('RICE', 'Passed via RICE score', 'mandatory')
+  if (hasRpQg1Pass(feature)) return passViaLabel('RICE', 'rp-qg1-pass', 'mandatory')
+  if (feature.riceScore == null) return evalItem('RICE', false, 'No RICE score in Jira', 'mandatory')
+  return evalItem('RICE', false, 'RICE score is 0', 'mandatory')
 }
 
 function evalDocsImpact(feature) {
@@ -378,10 +402,17 @@ function evalArchitecturalAlignment(feature) {
       var title = matchedSectionDetail(signals, ['architecture'])
       return passViaDescription('Architectural alignment', title, 'criteria')
     }
-    // When required is unknown — not-checked rather than hard fail
-    return evalItem('Architectural alignment', null, 'Not checked — no architecture notes or “not required” in description', 'criteria')
+    return naPassItem(
+      'Architectural alignment',
+      'N/A — no architecture notes or “not required” in description',
+      'criteria'
+    )
   }
-  return evalItem('Architectural alignment', null, 'Not checked — no description architecture signals', 'criteria')
+  return naPassItem(
+    'Architectural alignment',
+    'N/A — no description architecture signals',
+    'criteria'
+  )
 }
 
 function evalUxd(feature) {
@@ -392,7 +423,11 @@ function evalUxd(feature) {
   if (signals && signals.hasNaNoUx) {
     return evalItem('UXD', true, 'Passed via description (N/A – no UX)', 'criteria')
   }
-  return evalItem('UXD', null, 'Not checked — no UXD component and no “N/A – no UX” note', 'criteria')
+  return naPassItem(
+    'UXD',
+    'N/A — no UXD component and no “N/A – no UX” note',
+    'criteria'
+  )
 }
 
 function evalCrossTeamDeps(feature) {
@@ -416,7 +451,11 @@ function evalCrossTeamDeps(feature) {
 
 function evalFeatureHumanSignOff(feature) {
   if (!isAiFirstFeature(feature)) {
-    return evalItem('Feature human sign-off', null, 'N/A — not an AI First (strat-creator-*) feature', 'criteria')
+    return naPassItem(
+      'Feature human sign-off',
+      'N/A — not an AI First (strat-creator-*) feature',
+      'criteria'
+    )
   }
   if (hasStratCreatorHumanLabel(feature)) {
     return passViaLabel('Feature human sign-off', 'strat-creator-human*', 'criteria')
@@ -424,7 +463,12 @@ function evalFeatureHumanSignOff(feature) {
   if (hasRpQg1Pass(feature)) {
     return passViaLabel('Feature human sign-off', 'rp-qg1-pass', 'criteria')
   }
-  return evalItem('Feature human sign-off', false, 'Missing strat-creator-human* (or rp-qg1-pass) label', 'criteria')
+  return evalItem(
+    'Feature human sign-off',
+    false,
+    'Missing strat-creator-human* (or bot-verified rp-qg1-pass) label',
+    'criteria'
+  )
 }
 
 function evalChildEpics(feature) {
@@ -531,13 +575,9 @@ function computeFPDoRReadiness(feature) {
 
   var passedCount = 0
   var evaluatedCount = 0
-  var applicableCount = 0
   for (var i = 0; i < items.length; i++) {
     if (items[i].pass === true) passedCount++
-    if (items[i].pass !== null) {
-      evaluatedCount++
-      applicableCount++
-    }
+    if (items[i].pass !== null) evaluatedCount++
   }
 
   var allApplicablePassed = items.every(function(item) { return item.pass !== false })
@@ -547,7 +587,7 @@ function computeFPDoRReadiness(feature) {
     passedCount: passedCount,
     totalCount: FPDOR_TOTAL_COUNT,
     evaluatedCount: evaluatedCount,
-    applicableCount: applicableCount,
+    applicableCount: FPDOR_TOTAL_COUNT,
     allApplicablePassed: allApplicablePassed,
     groups: {
       mandatory: MANDATORY_ITEMS.slice(),

@@ -6,15 +6,26 @@
  * and component-level release load data used by PM Hub reports.
  */
 
-const { CUSTOM_FIELDS, transformIssue } = require('../hygiene/jira-fetch')
+const { CUSTOM_FIELDS } = require('../hygiene/jira-fetch')
 const { blockDuringImpersonation } = require('../../../../shared/server/auth')
 const { JIRA_HOST } = require('../../../../shared/server/jira')
 const { filterCommittedFixVersions, parseReleaseName, compareReleasesTemporally } = require('./committed-definition')
 const { parseDescriptionSignals } = require('../planning/health/description-scanner')
 const { computeFPDoRReadiness, isAiFirstFeature } = require('../planning/fpdor')
+const { loadIndex } = require('../planning/cache-reader')
+const { FEATURES_LIST_PROJECTS } = require('../planning/constants')
+const { loadReleaseDatesMap } = require('../tv-fv-delta/alignment')
+const { buildCanonicalFeatures } = require('../planning/feature-readiness')
+const { fetchFeaturesWithTimeout } = require('../planning/feature-query')
+const {
+  buildComponentReleaseLoadGroups,
+  attachAlignment: attachAlignmentFromCanonical
+} = require('./canonical-load')
+const { fetchDeliveredInVersion } = require('./delivered-in-version')
 
 const JIRA_SEARCH = JIRA_HOST + '/issues/?jql='
-const PM_HUB_PROJECTS = ['RHAIENG', 'RHOAIENG', 'INFERENG', 'AIPCC', 'RHAISTRAT', 'RHAIRFE']
+/** Same Feature/Initiative population as Features List live fetch (RHAISTRAT + AIPCC). */
+const PM_HUB_PROJECTS = FEATURES_LIST_PROJECTS
 const PILLAR_CONFIG_FILE = 'releases/pm-hub/pillar-config.json'
 
 var DEFAULT_PILLAR_CONFIG = {
@@ -369,23 +380,10 @@ function formatAvg(value) {
   return value % 1 === 0 ? String(value) : value.toFixed(1)
 }
 
-const DEFAULT_ISSUE_TYPES = ['Feature', 'Initiative']
-const FIELDS_TO_FETCH = [
-  'summary', 'status', 'issuetype', 'assignee', 'priority', 'fixVersions', 'versions',
-  'components', 'labels', 'issuelinks', 'description',
-  CUSTOM_FIELDS.team,
-  CUSTOM_FIELDS.releaseType,
-  CUSTOM_FIELDS.statusSummary,
-  CUSTOM_FIELDS.colorStatus,
-  CUSTOM_FIELDS.productManager,
-  CUSTOM_FIELDS.docsRequired,
-  CUSTOM_FIELDS.riceScore
-].join(',')
-
 /**
- * PM/DO Aligned: Yes when some Fix Version strictly matches some Target Version.
- * Match = identical string, or same normalized product + major.minor + event (cmp === 0).
- * Missing TV or FV → not aligned. Early delivery (FV before TV) is NOT aligned.
+ * PM/DO Aligned (legacy binary): Yes when some Fix Version strictly matches some Target Version.
+ * Prefer alignmentCategory from attachAlignment() (TV/FV Delta 5-category rules) in PM Hub rows.
+ * Missing TV or FV → not aligned. Early delivery (FV before TV) is NOT aligned under this binary helper.
  */
 function versionsStrictMatch(a, b) {
   if (!a || !b) return false
@@ -410,13 +408,60 @@ function computePmDoAligned(fixVersions, targetVersions) {
   return false
 }
 
+/**
+ * Attach Delta 5-category alignment for a specific release bucket.
+ * Mutates and returns featureObj.
+ */
+function attachAlignment(featureObj, release, releaseDates) {
+  return attachAlignmentFromCanonical(featureObj, release, releaseDates)
+}
+
 function computeConfidence(isReady, fixVersion) {
   if (!isReady) return 'not-ready'
   if (fixVersion) return 'committed'
   return 'ready'
 }
 
-function buildFeatureObj(f, targetVersions, rawIssue) {
+/**
+ * Child-epics FPDoR count for PM Hub.
+ * Prefer execution-index epicCount (same source as Features List / jira-sync).
+ * Do not use hygiene openChildCount — that is only filled for terminal features
+ * and counts any open child, not Epic children.
+ *
+ * @param {object} f - Transformed hygiene feature (or partial)
+ * @param {object} [epicCountByKey] - Map of issue key → epicCount from execution index
+ * @returns {number}
+ */
+function resolveEpicCount(f, epicCountByKey) {
+  var key = f && f.key
+  if (key && epicCountByKey && epicCountByKey[key] != null) {
+    return epicCountByKey[key] || 0
+  }
+  if (f && f.epicCount != null) return f.epicCount || 0
+  return 0
+}
+
+/**
+ * Build a key → epicCount map from the execution index (one storage read).
+ * @param {Function} readFromStorage
+ * @returns {Promise<object>}
+ */
+async function loadEpicCountByKey(readFromStorage) {
+  var byKey = {}
+  try {
+    var execIndex = await loadIndex(readFromStorage)
+    var features = (execIndex && execIndex.features) || []
+    for (var i = 0; i < features.length; i++) {
+      var ef = features[i]
+      if (ef && ef.key) byKey[ef.key] = ef.epicCount || 0
+    }
+  } catch (err) {
+    console.warn('[releases/pm-hub] Failed to load execution epic counts:', err.message)
+  }
+  return byKey
+}
+
+function buildFeatureObj(f, targetVersions, rawIssue, epicCountByKey) {
   var tv = targetVersions || []
   var labels = Array.isArray(f.labels) ? f.labels : []
   var fixVersions = f.fixVersions || []
@@ -444,7 +489,7 @@ function buildFeatureObj(f, targetVersions, rawIssue) {
     linkedRfeKey: f.linkedRfeKey || null,
     sourceRfe: f.linkedRfeKey || null,
     descriptionSignals: descriptionSignals,
-    epicCount: f.openChildCount || 0
+    epicCount: resolveEpicCount(f, epicCountByKey)
   }
 
   var fpdor = computeFPDoRReadiness(fpdorInput)
@@ -466,6 +511,7 @@ function buildFeatureObj(f, targetVersions, rawIssue) {
     components: f.components || [],
     fixVersions: fixVersions,
     targetVersions: tv,
+    alignmentCategory: null,
     pmDoAligned: computePmDoAligned(fixVersions, tv),
     assignee: f.assignee || null,
     pmOwner: f.pmOwner || null,
@@ -504,7 +550,7 @@ module.exports = async function registerPmHubRoutes(router, context) {
    *   get:
    *     tags: [Releases]
    *     summary: List Jira components across PM Hub projects
-   *     description: Returns components from RHAIENG, RHOAIENG, INFERENG, AIPCC, RHAISTRAT, RHAIRFE
+   *     description: Returns components from RHAISTRAT and AIPCC (same population as Features List)
    *     responses:
    *       200:
    *         description: Array of components with project keys
@@ -559,7 +605,7 @@ module.exports = async function registerPmHubRoutes(router, context) {
    *   get:
    *     tags: [Releases]
    *     summary: List Jira versions across PM Hub projects
-   *     description: Returns versions from RHAIENG, RHOAIENG, INFERENG, AIPCC, RHAISTRAT, RHAIRFE
+   *     description: Returns versions from RHAISTRAT and AIPCC (same population as Features List)
    *     responses:
    *       200:
    *         description: Array of versions with project keys
@@ -590,11 +636,17 @@ module.exports = async function registerPmHubRoutes(router, context) {
    *     tags: [Releases]
    *     summary: Get component release load tracking data
    *     description: >
-   *       Queries Jira for Features/Initiatives grouped by version then component.
-   *       F Requested = issues where Target Version (cf[10855]) matches a selected version.
-   *       F Committed = issues where fixVersion matches a selected version AND a Target
-   *       Version either matches that fixVersion or is later in the same release cycle
-   *       (early delivery; same product + major.minor, EA1 < EA2 < GA).
+   *       Builds Component Release Load from the shared Features pipeline
+   *       (buildCanonicalFeatures over RHAISTRAT + AIPCC, open only — same as
+   *       Features List). Groups by version then component.
+   *       F Requested = Target Version matches a selected version.
+   *       F Committed = Fix Version matches a selected version (FV only;
+   *       Target Version does not gate Committed — see TV/FV Align for TV/FV relationship).
+   *       TV/FV Align uses the Delta 5-category classifier.
+   *       delivered is a fail-soft Closed/Done/Resolved list for selected Fix
+   *       Versions (not merged into planning load). Empty when no versions are
+   *       selected; timedOut true if that extra Jira search exceeds its own
+   *       short timeout.
    *     parameters:
    *       - in: query
    *         name: components
@@ -697,210 +749,53 @@ module.exports = async function registerPmHubRoutes(router, context) {
     }
 
     try {
-      var baseParts = [
-        'project IN (' + PM_HUB_PROJECTS.join(', ') + ')',
-        'issuetype IN (' + DEFAULT_ISSUE_TYPES.join(', ') + ')'
-      ]
+      var storage = context.storage
+      var releaseDates = await loadReleaseDatesMap(storage)
 
-      var componentClause = ''
-      if (componentNames.length > 0) {
-        var escapedComp = componentNames.map(function(c) {
-          return '"' + c.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
-        })
-        componentClause = 'component IN (' + escapedComp.join(', ') + ')'
-      }
-
-      var escapedVer = versionNames.map(function(v) {
-        return '"' + v.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
+      // Closed-in-version is a separate, version-required query. Do not fold it
+      // into the open Features pipeline (gateway timeout). Fail soft.
+      var deliveredPromise = fetchDeliveredInVersion(jiraClient, {
+        versions: versionNames,
+        components: componentNames
       })
 
-      var fieldsWithTv = FIELDS_TO_FETCH + ',' + CUSTOM_FIELDS.targetVersion
-
-      // Query 1: F Requested — Target Version (cf[10855]) matches selected versions
-      var requestedIssues = []
-      if (versionNames.length > 0) {
-        var tvJqlParts = baseParts.slice()
-        if (componentClause) tvJqlParts.push(componentClause)
-        tvJqlParts.push('cf[10855] IN (' + escapedVer.join(', ') + ')')
-        var tvJql = tvJqlParts.join(' AND ')
-        requestedIssues = await jiraClient.fetchAllJqlResults(tvJql, fieldsWithTv, { expand: 'renderedFields' })
+      // Same live population as Features List (RHAISTRAT + AIPCC, open only).
+      var jiraFeatures = null
+      try {
+        jiraFeatures = await fetchFeaturesWithTimeout(jiraClient)
+      } catch (jiraErr) {
+        console.warn('[releases/pm-hub] Jira feature query failed, falling back to caches:', jiraErr.message)
       }
 
-      // Query 2: FV candidates — fixVersion matches selected versions.
-      // Committed bucketing applies a stricter TV/FV rule after fetch.
-      var committedIssues = []
-      if (versionNames.length > 0) {
-        var fvJqlParts = baseParts.slice()
-        if (componentClause) fvJqlParts.push(componentClause)
-        fvJqlParts.push('fixVersion IN (' + escapedVer.join(', ') + ')')
-        var fvJql = fvJqlParts.join(' AND ')
-        committedIssues = await jiraClient.fetchAllJqlResults(fvJql, fieldsWithTv, { expand: 'renderedFields' })
-      } else if (componentNames.length > 0) {
-        var compOnlyParts = baseParts.slice()
-        compOnlyParts.push(componentClause)
-        var compJql = compOnlyParts.join(' AND ')
-        committedIssues = await jiraClient.fetchAllJqlResults(compJql, fieldsWithTv, { expand: 'renderedFields' })
-      }
-
-      var versionGroups = {}
-
-      function ensureGroup(vName, cName) {
-        if (!versionGroups[vName]) {
-          versionGroups[vName] = { version: vName, components: {} }
-        }
-        if (!versionGroups[vName].components[cName]) {
-          versionGroups[vName].components[cName] = {
-            component: cName,
-            requestedFeatures: [],
-            committedFeatures: [],
-            requestedCount: 0,
-            committedCount: 0,
-            blockedCount: 0
-          }
-        }
-        return versionGroups[vName].components[cName]
-      }
-
-      // Process all issues with OR display logic:
-      // Show issue if selected release matches fixVersion OR targetVersion.
-      // committedFeatures/Count = FV in scope + TV match or early delivery (same cycle).
-      // requestedFeatures/Count = targetVersion matches selected scope only.
-      var allIssues = {}
-
-      for (var ri = 0; ri < requestedIssues.length; ri++) {
-        var raw = requestedIssues[ri]
-        if (!allIssues[raw.key]) allIssues[raw.key] = { raw: raw }
-      }
-      for (var cii = 0; cii < committedIssues.length; cii++) {
-        var rawC = committedIssues[cii]
-        if (!allIssues[rawC.key]) allIssues[rawC.key] = { raw: rawC }
-      }
-
-      var issueKeys = Object.keys(allIssues)
-      for (var ik = 0; ik < issueKeys.length; ik++) {
-        var entry = allIssues[issueKeys[ik]]
-        var rawIssue = entry.raw
-        var f = transformIssue(rawIssue, {})
-        var tvNames = extractTargetVersions(rawIssue)
-        var fvList = f.fixVersions && f.fixVersions.length > 0 ? f.fixVersions : []
-        var compList = f.components && f.components.length > 0 ? f.components : ['No Component']
-
-        if (versionNames.length === 0) {
-          // Component-only mode: group by fixVersion; Committed still requires TV support
-          var committedFvOnly = filterCommittedFixVersions(fvList, tvNames)
-          if (committedFvOnly.length === 0) continue
-          for (var ufi = 0; ufi < committedFvOnly.length; ufi++) {
-            for (var uci = 0; uci < compList.length; uci++) {
-              var ucName = compList[uci]
-              if (componentNames.length > 0 && componentNames.indexOf(ucName) === -1) continue
-              var uGroup = ensureGroup(committedFvOnly[ufi], ucName)
-              if (!uGroup.committedFeatures.some(function(e) { return e.key === f.key })) {
-                uGroup.committedFeatures.push(buildFeatureObj(f, tvNames, rawIssue))
-                uGroup.committedCount++
-                if (f.isBlocked) uGroup.blockedCount++
-              }
-            }
-          }
-          continue
-        }
-
-        // Determine which selected versions match each field
-        var matchingFv = []
-        var matchingTv = []
-        for (var fvi = 0; fvi < fvList.length; fvi++) {
-          if (versionNames.indexOf(fvList[fvi]) !== -1) matchingFv.push(fvList[fvi])
-        }
-        for (var tvi = 0; tvi < tvNames.length; tvi++) {
-          if (versionNames.indexOf(tvNames[tvi]) !== -1) matchingTv.push(tvNames[tvi])
-        }
-
-        // OR logic: skip if neither field matches any selected version
-        if (matchingFv.length === 0 && matchingTv.length === 0) continue
-
-        // Committed = selected FV + TV match or early delivery in same cycle
-        var committedFv = filterCommittedFixVersions(matchingFv, tvNames)
-
-        // Group only under versions that will receive this feature (avoid empty groups
-        // when FV is in scope but fails the Committed TV rule).
-        var groupVersions = {}
-        for (var mf = 0; mf < committedFv.length; mf++) groupVersions[committedFv[mf]] = true
-        for (var mt = 0; mt < matchingTv.length; mt++) groupVersions[matchingTv[mt]] = true
-        var groupVersionKeys = Object.keys(groupVersions)
-        if (groupVersionKeys.length === 0) continue
-
-        var isRequested = matchingTv.length > 0
-        var featureObj = buildFeatureObj(f, tvNames, rawIssue)
-
-        for (var gvi = 0; gvi < groupVersionKeys.length; gvi++) {
-          var vKey = groupVersionKeys[gvi]
-          for (var ci = 0; ci < compList.length; ci++) {
-            var cName = compList[ci]
-            if (componentNames.length > 0 && componentNames.indexOf(cName) === -1) continue
-            var group = ensureGroup(vKey, cName)
-
-            if (committedFv.indexOf(vKey) !== -1) {
-              if (!group.committedFeatures.some(function(e) { return e.key === f.key })) {
-                group.committedFeatures.push(featureObj)
-                group.committedCount++
-                if (f.isBlocked) group.blockedCount++
-              }
-            }
-            if (isRequested && matchingTv.indexOf(vKey) !== -1) {
-              if (!group.requestedFeatures.some(function(e) { return e.key === f.key })) {
-                group.requestedFeatures.push(featureObj)
-                group.requestedCount++
-              }
-            }
-          }
-        }
-      }
-
-      // Query 3: Velocity — resolved features in the last year with a fixVersion
-      var velocityIssues = []
-      if (componentClause) {
-        var velJqlParts = baseParts.slice()
-        velJqlParts.push(componentClause)
-        velJqlParts.push('statusCategory = Done')
-        velJqlParts.push('resolved >= -' + VELOCITY_LOOKBACK_WEEKS + 'w')
-        velJqlParts.push('fixVersion is not EMPTY')
-        var velJql = velJqlParts.join(' AND ')
-        velocityIssues = await jiraClient.fetchAllJqlResults(velJql, 'summary,status,fixVersions,components,resolutiondate', {})
-      }
-
-      var velocity = computeVelocity(velocityIssues, componentClause, null, componentNames)
-
-      var groups = Object.keys(versionGroups).sort().map(function(vKey) {
-        var vg = versionGroups[vKey]
-        var compGroups = Object.keys(vg.components).sort().map(function(cKey) {
-          return vg.components[cKey]
-        })
-        var totalRequested = 0
-        var totalCommitted = 0
-        var totalBlocked = 0
-        for (var cgi = 0; cgi < compGroups.length; cgi++) {
-          totalRequested += compGroups[cgi].requestedCount
-          totalCommitted += compGroups[cgi].committedCount
-          totalBlocked += compGroups[cgi].blockedCount
-        }
-        return {
-          version: vg.version,
-          components: compGroups,
-          requestedCount: totalRequested,
-          committedCount: totalCommitted,
-          blockedCount: totalBlocked
-        }
+      var canonical = await buildCanonicalFeatures({
+        readFromStorage: storage.readFromStorage,
+        jiraFeatures: jiraFeatures,
+        listStorageFiles: storage.listStorageFiles || null,
+        includeClosed: false
       })
 
+      var built = buildComponentReleaseLoadGroups(canonical.features || [], {
+        components: componentNames,
+        versions: versionNames,
+        releaseDates: releaseDates
+      })
+
+      var delivered = await deliveredPromise
+
+      // Velocity KPI hidden for now — keep computeVelocity() for a future report.
       res.json({
-        groups: groups,
-        velocity: velocity,
+        groups: built.groups,
+        velocity: null,
+        delivered: delivered,
         fetchedAt: new Date().toISOString(),
-        filters: { components: componentNames, versions: versionNames }
+        filters: { components: componentNames, versions: versionNames },
+        source: jiraFeatures ? 'canonical-live' : 'canonical-cache'
       })
     } catch (err) {
       console.error('[releases/pm-hub] Component release load fetch failed:', err.message)
       res.status(500).json({ error: 'Failed to fetch component release load data' })
     }
+
   })
 }
 
@@ -910,7 +805,10 @@ module.exports.PILLAR_CONFIG_FILE = PILLAR_CONFIG_FILE
 module.exports.backfillLeads = backfillLeads
 module.exports.computeVelocity = computeVelocity
 module.exports.buildFeatureObj = buildFeatureObj
+module.exports.resolveEpicCount = resolveEpicCount
+module.exports.loadEpicCountByKey = loadEpicCountByKey
 module.exports.extractTargetVersions = extractTargetVersions
 module.exports.filterCommittedFixVersions = filterCommittedFixVersions
 module.exports.computePmDoAligned = computePmDoAligned
 module.exports.versionsStrictMatch = versionsStrictMatch
+module.exports.attachAlignment = attachAlignment

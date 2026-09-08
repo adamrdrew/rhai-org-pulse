@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import RubricScoreBadge from '@shared/client/components/RubricScoreBadge.vue'
 import FPDoRPopover from './FPDoRPopover.vue'
+import AlignmentPopover from './AlignmentPopover.vue'
 import { failedFpdorNames } from '../utils/feature-readiness-export.js'
 import {
   fpdorItemSeverity,
@@ -219,6 +220,11 @@ var scoreBreakdown = computed(function() {
       <span class="font-mono text-xs text-gray-700 dark:text-gray-300">{{ feature.fixVersion || '—' }}</span>
     </td>
 
+    <!-- TV/FV Align -->
+    <td class="px-3 py-2.5 text-center whitespace-nowrap">
+      <AlignmentPopover :feature="feature" />
+    </td>
+
     <!-- Components -->
     <td class="px-3 py-2.5">
       <div class="flex flex-wrap gap-1">
@@ -247,11 +253,12 @@ var scoreBreakdown = computed(function() {
       <RubricScoreBadge v-else :scores="feature.scores" :show-total="false" />
     </td>
 
-    <!-- Recommendation -->
+    <!-- AI First Recommends -->
     <td class="px-3 py-2.5 whitespace-nowrap">
       <span
         class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
         :class="recommendationClass(feature.recommendation)"
+        title="AI First pipeline recommendation"
       >{{ recommendationLabel(feature.recommendation) }}</span>
     </td>
 

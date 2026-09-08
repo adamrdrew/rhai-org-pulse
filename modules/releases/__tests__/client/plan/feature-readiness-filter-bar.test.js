@@ -21,6 +21,7 @@ function defaultModelValue() {
     team: [],
     product: [],
     fpdorItems: [],
+    alignment: [],
     readiness: null
   }
 }
@@ -258,6 +259,7 @@ describe('FeatureReadinessFilterBar', function() {
     expect(cleared.fixVersion).toEqual([])
     expect(cleared.component).toEqual([])
     expect(cleared.team).toEqual([])
+    expect(cleared.alignment).toEqual([])
   })
 
   // ─── Readiness single-select ───
@@ -366,6 +368,40 @@ describe('FeatureReadinessFilterBar', function() {
     })
     expect(wrapper.text()).toContain('All products')
     expect(wrapper.text()).toContain('Any failed item')
+    expect(wrapper.text()).toContain('All alignments')
+  })
+
+  it('emits alignment selection', async function() {
+    var wrapper = mount(FeatureReadinessFilterBar, {
+      props: { filterMeta: FILTER_META, modelValue: defaultModelValue() },
+      attachTo: document.body
+    })
+    var alignBtn = findButtonByText(wrapper, 'All alignments')
+    expect(alignBtn.length).toBe(1)
+    await alignBtn[0].trigger('click')
+    expect(wrapper.text()).toContain('Early or as requested')
+    expect(wrapper.text()).toContain('Different products')
+    var labels = wrapper.findAll('label').filter(function(l) { return l.text().includes('Different products') })
+    expect(labels.length).toBeGreaterThan(0)
+    await labels[0].find('input').setValue(true)
+    var emitted = wrapper.emitted('update:modelValue')
+    expect(emitted[emitted.length - 1][0].alignment).toContain('misaligned')
+    wrapper.unmount()
+  })
+
+  it('After requested checkbox selects yellow and green categories', async function() {
+    var wrapper = mount(FeatureReadinessFilterBar, {
+      props: { filterMeta: FILTER_META, modelValue: defaultModelValue() },
+      attachTo: document.body
+    })
+    var alignBtn = findButtonByText(wrapper, 'All alignments')
+    await alignBtn[0].trigger('click')
+    var labels = wrapper.findAll('label').filter(function(l) { return l.text().trim() === 'After requested' })
+    expect(labels.length).toBe(1)
+    await labels[0].find('input').setValue(true)
+    var emitted = wrapper.emitted('update:modelValue')
+    expect(emitted[emitted.length - 1][0].alignment).toEqual(['after_requested', 'aligned_late'])
+    wrapper.unmount()
   })
 
   it('emits product selection', async function() {

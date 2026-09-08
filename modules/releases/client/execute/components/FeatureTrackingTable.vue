@@ -1,5 +1,6 @@
 <script setup>
 import { reactive } from 'vue'
+import { productColors } from '../../composables/useProductColors.js'
 
 const props = defineProps({
   groups: { type: Array, default: () => [] },
@@ -9,19 +10,9 @@ const props = defineProps({
   filteredFeatureCount: { type: Number, default: null }
 })
 
+const emit = defineEmits(['feature-click'])
+
 const JIRA_BASE = 'https://redhat.atlassian.net/browse'
-
-const PRODUCT_COLORS = {
-  rhoai: { bg: 'bg-violet-50 dark:bg-violet-900/15', border: 'border-l-violet-500', badge: 'bg-violet-100 dark:bg-violet-800/40 text-violet-700 dark:text-violet-300', dot: 'bg-violet-500' },
-  rhelai: { bg: 'bg-teal-50 dark:bg-teal-900/15', border: 'border-l-teal-500', badge: 'bg-teal-100 dark:bg-teal-800/40 text-teal-700 dark:text-teal-300', dot: 'bg-teal-500' },
-  rhaii: { bg: 'bg-sky-50 dark:bg-sky-900/15', border: 'border-l-sky-500', badge: 'bg-sky-100 dark:bg-sky-800/40 text-sky-700 dark:text-sky-300', dot: 'bg-sky-500' }
-}
-
-const DEFAULT_COLORS = { bg: 'bg-gray-50 dark:bg-gray-800/50', border: 'border-l-gray-400', badge: 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300', dot: 'bg-gray-400' }
-
-function productColors(product) {
-  return PRODUCT_COLORS[product] || DEFAULT_COLORS
-}
 
 const expandedPortfolio = reactive({})
 const expandedProducts = reactive({})
@@ -67,6 +58,13 @@ function collapseAll() {
   for (var i = 0; i < props.groups.length; i++) {
     delete expandedProducts[productGroupKey(props.portfolioVersion, props.groups[i].product)]
   }
+}
+
+function portfolioLabel(version) {
+  var v = String(version || '').trim()
+  if (!v) return 'RHAI'
+  if (/^rhai\b/i.test(v)) return v
+  return 'RHAI ' + v
 }
 
 function totalFeatureCount() {
@@ -137,6 +135,37 @@ function colorStatusRing(colorStatus) {
   return 'ring-gray-200 dark:ring-gray-700'
 }
 
+function healthDotClass(health) {
+  var h = String(health || '').toUpperCase()
+  if (h === 'GREEN') return 'bg-green-500'
+  if (h === 'YELLOW') return 'bg-yellow-500'
+  if (h === 'RED') return 'bg-red-500'
+  return 'bg-gray-300 dark:bg-gray-600'
+}
+
+function progressBarClass(pct) {
+  if (pct >= 70) return 'bg-green-500'
+  if (pct >= 40) return 'bg-yellow-500'
+  return 'bg-red-500'
+}
+
+function violationCount(feature) {
+  return Array.isArray(feature.violations) ? feature.violations.length : 0
+}
+
+function violationNames(feature) {
+  var list = feature.violations || []
+  var names = []
+  for (var i = 0; i < list.length; i++) {
+    if (list[i] && list[i].name) names.push(list[i].name)
+  }
+  return names.join(', ')
+}
+
+function handleRowClick(feature) {
+  emit('feature-click', feature)
+}
+
 defineExpose({ expandAll, collapseAll })
 </script>
 
@@ -149,7 +178,7 @@ defineExpose({ expandAll, collapseAll })
           class="cursor-pointer select-none bg-gradient-to-r from-gray-100 to-gray-50 dark:from-gray-800 dark:to-gray-800/80 hover:from-gray-200 hover:to-gray-100 dark:hover:from-gray-750 dark:hover:to-gray-800"
           @click="togglePortfolio(portfolioVersion)"
         >
-          <td colspan="9" class="px-4 py-3.5">
+          <td colspan="12" class="px-4 py-3.5">
             <div class="flex items-center gap-3">
               <svg
                 class="w-4 h-4 text-gray-400 dark:text-gray-500 transition-transform duration-200"
@@ -158,7 +187,7 @@ defineExpose({ expandAll, collapseAll })
               >
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
               </svg>
-              <span class="font-bold text-gray-900 dark:text-gray-100">RHAI {{ portfolioVersion }}</span>
+              <span class="font-bold text-gray-900 dark:text-gray-100">{{ portfolioLabel(portfolioVersion) }}</span>
               <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300">
                 <template v-if="filteredFeatureCount != null && filteredFeatureCount !== totalFeatureCount()">{{ filteredFeatureCount }} of </template>{{ totalFeatureCount() }} features
               </span>
@@ -190,7 +219,7 @@ defineExpose({ expandAll, collapseAll })
               ]"
               @click="toggleProduct(portfolioVersion, group.product)"
             >
-              <td colspan="9" class="px-6 py-2.5">
+              <td colspan="12" class="px-6 py-2.5">
                 <div class="flex items-center gap-2.5">
                   <svg
                     class="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 transition-transform duration-200"
@@ -243,6 +272,9 @@ defineExpose({ expandAll, collapseAll })
               <th class="px-3 py-2 text-left text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-40">Components</th>
               <th class="px-3 py-2 text-left text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-32">Delivery Owner</th>
               <th class="px-3 py-2 text-left text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-32">PM Owner</th>
+              <th class="px-3 py-2 text-center text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-20">Hygiene</th>
+              <th class="px-3 py-2 text-left text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-28">Progress</th>
+              <th class="px-3 py-2 text-center text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-16">Health</th>
             </tr>
 
             <!-- Feature rows -->
@@ -250,12 +282,14 @@ defineExpose({ expandAll, collapseAll })
               <tr
                 v-for="feature in group.features"
                 :key="feature.key"
-                class="border-b border-gray-100 dark:border-gray-800 transition-colors"
+                data-testid="execute-feature-row"
+                class="border-b border-gray-100 dark:border-gray-800 transition-colors cursor-pointer"
                 :class="{
                   'bg-blue-50/50 dark:bg-blue-900/10 border-l-4 border-l-blue-400 dark:border-l-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20': feature.scopeChange === 'added',
                   'bg-amber-50/30 dark:bg-amber-900/5 border-l-4 border-l-amber-300 dark:border-l-amber-700 opacity-60 hover:opacity-80': feature.scopeChange === 'dropped',
                   'bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800/50': !feature.scopeChange
                 }"
+                @click="handleRowClick(feature)"
               >
                 <!-- Feature key -->
                 <td class="px-3 py-2.5 whitespace-nowrap">
@@ -266,6 +300,7 @@ defineExpose({ expandAll, collapseAll })
                       rel="noopener"
                       class="font-mono text-xs font-medium text-primary-600 dark:text-blue-400 hover:underline hover:text-primary-700 dark:hover:text-blue-300 transition-colors"
                       :class="{ 'line-through': feature.scopeChange === 'dropped' }"
+                      @click.stop
                     >{{ feature.key }}</a>
                     <span
                       v-if="feature.scopeChange === 'added'"
@@ -360,6 +395,42 @@ defineExpose({ expandAll, collapseAll })
                 <td class="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap">
                   {{ feature.pmOwner || '--' }}
                 </td>
+
+                <!-- Hygiene -->
+                <td class="px-3 py-2.5 text-center">
+                  <span
+                    v-if="violationCount(feature) > 0"
+                    class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300"
+                    :title="violationNames(feature)"
+                  >{{ violationCount(feature) }}</span>
+                  <span v-else class="text-[10px] font-medium text-green-600 dark:text-green-400">0</span>
+                </td>
+
+                <!-- Progress -->
+                <td class="px-3 py-2.5">
+                  <div v-if="feature.completionPct != null" class="flex items-center gap-1.5 min-w-[80px]">
+                    <div class="flex-1 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                      <div
+                        class="h-full rounded-full"
+                        :class="progressBarClass(feature.completionPct || 0)"
+                        :style="{ width: (feature.completionPct || 0) + '%' }"
+                      />
+                    </div>
+                    <span class="text-[10px] font-semibold text-gray-500 dark:text-gray-400 w-8 text-right">{{ feature.completionPct }}%</span>
+                  </div>
+                  <span v-else class="text-gray-300 dark:text-gray-600 text-xs">—</span>
+                </td>
+
+                <!-- Pipeline health -->
+                <td class="px-3 py-2.5 text-center">
+                  <span
+                    v-if="feature.health"
+                    class="inline-block w-3.5 h-3.5 rounded-full"
+                    :class="healthDotClass(feature.health)"
+                    :title="feature.health"
+                  />
+                  <span v-else class="text-gray-300 dark:text-gray-600 text-xs">—</span>
+                </td>
               </tr>
             </template>
 
@@ -367,7 +438,7 @@ defineExpose({ expandAll, collapseAll })
             <tr
               v-if="isProductExpanded(portfolioVersion, group.product) && group.features.length === 0"
             >
-              <td colspan="9" class="px-8 py-6 text-sm text-gray-400 dark:text-gray-500 italic text-center">
+              <td colspan="12" class="px-8 py-6 text-sm text-gray-400 dark:text-gray-500 italic text-center">
                 No features found for {{ group.releaseNumber }}
               </td>
             </tr>

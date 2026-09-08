@@ -2,6 +2,8 @@
  * Fail-severity overlay for Confluence FPDoR items (display/triage only).
  * Ready remains: all applicable items pass. Severity does not redefine Ready.
  *
+ * Display sort order (fail-first groups) lives in fpdor-display.js.
+ *
  * Mapped from Erle's ranked list (2026-08-07), remapped to Confluence item names.
  */
 
@@ -21,7 +23,7 @@ var FPDOR_SEVERITY_BY_NAME = {
   // High
   'Release Type': 'high',
   Priority: 'high',
-  'RICE (4 dims)': 'high',
+  'RICE': 'high',
   'Docs impact': 'high',
   // Medium
   'Cross-team deps': 'medium',
@@ -129,7 +131,7 @@ function pathChipClass(feature) {
 
 function pathChipTitle(feature) {
   if (isAiFirstFeature(feature)) {
-    return 'AI First — has strat-creator-* label (Confluence path)'
+    return 'AI First — has strat-creator-* label'
   }
   return 'Legacy — no strat-creator-* label'
 }

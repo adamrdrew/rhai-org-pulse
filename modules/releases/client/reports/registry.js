@@ -39,8 +39,8 @@ export const reports = [
   },
   {
     id: 'cve-sustaining',
-    label: 'RHOAI Sustaining (CVEs)',
-    description: 'Open CVE tracking across RHOAI components and versions — due dates, assignee workload, VEX justifications, and trends.',
+    label: 'RHAI Sustaining (CVEs)',
+    description: 'Open CVE tracking across RHAI components and versions — due dates, assignee workload, VEX justifications, and trends.',
     icon: 'ShieldAlert',
     tags: ['Security', 'CVE', 'Sustaining'],
     component: defineAsyncComponent(() => import('./CveSustainingReport.vue'))
@@ -56,5 +56,13 @@ export const reports = [
     label: 'AI Adoption Report',
     description: 'Scorecard tracking AI pipeline adoption across components, with release-over-release trends.',
     component: defineAsyncComponent(() => import('./AiAdoptionReport.vue'))
+  },
+  {
+    id: 'rhoai-component-architectures',
+    label: 'RHOAI Component Architectures (Multi-Arch)',
+    description: 'Multi-architecture build support matrix for RHOAI components per release branch.',
+    icon: 'Cpu',
+    tags: ['Build', 'Architecture', 'Multi-Arch'],
+    component: defineAsyncComponent(() => import('./RhoaiComponentArchitecturesReport.vue'))
   }
 ]

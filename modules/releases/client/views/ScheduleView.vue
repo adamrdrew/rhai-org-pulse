@@ -35,9 +35,9 @@
       >Try again</button>
     </div>
 
-    <!-- Empty -->
+    <!-- Empty (no data from API) -->
     <div
-      v-else-if="!allSortedReleases.length"
+      v-else-if="!releases.length"
       class="text-center py-16 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700"
     >
       <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-1">No releases found</h3>
@@ -47,64 +47,25 @@
     </div>
 
     <template v-else>
-      <!-- Countdown cards -->
-      <div v-if="upcomingMilestoneCards.length" class="flex gap-4 mb-6 flex-wrap">
-        <div
-          v-for="card in upcomingMilestoneCards"
-          :key="card.releaseName + '-' + card.type"
-          class="flex-1 min-w-[140px] bg-white dark:bg-gray-800 border rounded-lg text-center py-5 px-4 transition-all hover:shadow-md"
-          :class="card.days <= 7
-            ? 'border-blue-300 dark:border-blue-600'
-            : 'border-gray-200 dark:border-gray-700'"
-        >
-          <div
-            class="text-[42px] font-bold leading-none tabular-nums"
-            :class="card.days <= 7
-              ? 'text-blue-600 dark:text-blue-400'
-              : 'text-gray-900 dark:text-gray-100'"
-          >
-            {{ card.days === 0 ? 'Today' : card.days }}
-          </div>
-          <div
-            v-if="card.days !== 0"
-            class="text-[11px] font-medium uppercase tracking-wider mt-1"
-            :class="card.days <= 7
-              ? 'text-blue-400 dark:text-blue-500'
-              : 'text-gray-400 dark:text-gray-500'"
-          >days</div>
-          <div class="text-[13px] font-semibold text-gray-700 dark:text-gray-300 mt-2">
-            {{ card.releaseName }}
-          </div>
-          <div class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
-            {{ card.label }} · {{ formatShort(card.date) }}
-          </div>
-          <div v-if="card.days <= 7" class="flex justify-center mt-2">
-            <span class="inline-flex h-2 w-2 rounded-full bg-blue-500 animate-pulse"></span>
-          </div>
-        </div>
-      </div>
-
       <!-- Filters -->
       <div class="flex items-center justify-between mb-5 gap-4">
         <div class="flex flex-wrap gap-2">
-          <!-- Product filter pills -->
+          <!-- Product filter pills (multi-select) -->
           <template v-if="products.length > 1">
-            <button
-              @click="selectedProduct = null"
-              class="px-3 py-1 rounded-full text-xs font-medium transition-colors border"
-              :class="!selectedProduct
-                ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-900 dark:border-gray-100'
-                : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'"
-            >All</button>
             <button
               v-for="p in products"
               :key="p"
-              @click="selectedProduct = p"
+              @click="toggleProduct(p)"
               class="px-3 py-1 rounded-full text-xs font-medium transition-colors border"
-              :class="selectedProduct === p
+              :class="selectedProducts.indexOf(p) !== -1
                 ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-900 dark:border-gray-100'
                 : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'"
             >{{ p }}</button>
+            <button
+              v-if="selectedProducts.length > 0"
+              @click="selectedProducts = []"
+              class="px-3 py-1 rounded-full text-xs font-medium text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+            >Clear</button>
           </template>
           <!-- Stream filter pills (single-product) -->
           <template v-else-if="streams.length > 1">
@@ -132,8 +93,79 @@
         </label>
       </div>
 
+      <div v-if="availableVersions.length > 1" class="flex flex-wrap gap-2 mb-5 -mt-3">
+        <button
+          v-for="v in availableVersions"
+          :key="v"
+          @click="toggleVersion(v)"
+          class="px-2.5 py-0.5 rounded-full text-[11px] font-medium transition-colors border"
+          :class="selectedVersions.indexOf(v) !== -1
+            ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-900 dark:border-gray-100'
+            : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'"
+        >{{ v }}</button>
+        <button
+          v-if="selectedVersions.length > 0"
+          @click="selectedVersions = []"
+          class="px-2.5 py-0.5 rounded-full text-[11px] font-medium text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+        >Clear</button>
+      </div>
+
+      <!-- Milestone cards: upcoming countdowns, or the most recent past milestones
+           when only already-released versions are selected (never hidden). -->
+      <div v-if="milestoneCards.length" class="flex gap-4 mb-6 flex-wrap">
+        <div
+          v-for="card in milestoneCards"
+          :key="card.releaseName + '-' + card.type"
+          data-testid="milestone-countdown-card"
+          class="flex-1 min-w-[140px] bg-white dark:bg-gray-800 border rounded-lg text-center py-5 px-4 transition-all hover:shadow-md"
+          :class="card.na || card.past
+            ? 'border-gray-200 dark:border-gray-700 opacity-75'
+            : card.days <= 7
+              ? 'border-blue-300 dark:border-blue-600'
+              : 'border-gray-200 dark:border-gray-700'"
+        >
+          <div
+            class="text-[42px] font-bold leading-none tabular-nums"
+            :class="card.na || card.past
+              ? 'text-gray-400 dark:text-gray-500'
+              : card.days <= 7
+                ? 'text-blue-600 dark:text-blue-400'
+                : 'text-gray-900 dark:text-gray-100'"
+          >
+            {{ card.na ? 'N/A' : card.past ? Math.abs(card.days) : (card.days === 0 ? 'Today' : card.days) }}
+          </div>
+          <div
+            v-if="!card.na && (card.past || card.days !== 0)"
+            class="text-[11px] font-medium uppercase tracking-wider mt-1"
+            :class="!card.past && card.days <= 7
+              ? 'text-blue-400 dark:text-blue-500'
+              : 'text-gray-400 dark:text-gray-500'"
+          >{{ card.past ? 'days ago' : 'days' }}</div>
+          <div class="text-[13px] font-semibold text-gray-700 dark:text-gray-300 mt-2">
+            {{ card.releaseName }}
+          </div>
+          <div class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+            {{ card.label }}<template v-if="card.date"> · {{ formatShort(card.date) }}</template>
+          </div>
+          <div v-if="!card.na && !card.past && card.days <= 7" class="flex justify-center mt-2">
+            <span class="inline-flex h-2 w-2 rounded-full bg-blue-500 animate-pulse"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- No matching releases after filtering -->
+      <div
+        v-if="!allSortedReleases.length"
+        class="text-center py-12 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 mb-6"
+      >
+        <p class="text-sm text-gray-500 dark:text-gray-400">No releases match the current filters.</p>
+      </div>
+
+      <!-- Release Timeline -->
+      <ReleaseTimeline v-if="allSortedReleases.length" :releases="baseFilteredReleases" :hide-past="hideReleased" :focus-release-ids="focusReleaseIds" />
+
       <!-- Releases table -->
-      <div class="bg-white dark:bg-gray-900/50 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
+      <div v-if="allSortedReleases.length" class="bg-white dark:bg-gray-900/50 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
@@ -187,12 +219,14 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, h } from 'vue'
+import { ref, computed, watch, onMounted, h } from 'vue'
 import { apiRequest } from '@shared/client/services/api.js'
 import {
   parseDate, daysFromNow, formatShort as formatShortBase,
   getProduct, getStream, releasePhase, milestoneProgress
 } from '../composables/useScheduleHelpers.js'
+import ReleaseTimeline from '../components/ReleaseTimeline.vue'
+import { parseReleaseName } from '../composables/useReleaseFamily.js'
 
 function formatShort(dateStr) {
   return formatShortBase(dateStr, { year: true })
@@ -203,9 +237,10 @@ function formatShort(dateStr) {
 const releases = ref([])
 const loading = ref(true)
 const error = ref(null)
-const selectedProduct = ref(null)
+const selectedProducts = ref([])
 const selectedStream = ref(null)
 const hideReleased = ref(true)
+const selectedVersions = ref([])
 
 async function fetchRegistry() {
   loading.value = true
@@ -227,6 +262,43 @@ onMounted(fetchRegistry)
 
 function getGaDate(release) {
   return release.milestones?.ga || null
+}
+
+function versionLabel(release) {
+  var name = release.displayName || release.id
+  var parsed = parseReleaseName(name)
+  if (parsed) return parsed.major + '.' + parsed.minor + ' ' + parsed.milestone
+  return null
+}
+
+function toggleProduct(p) {
+  var idx = selectedProducts.value.indexOf(p)
+  if (idx === -1) {
+    selectedProducts.value = selectedProducts.value.concat(p)
+  } else {
+    selectedProducts.value = selectedProducts.value.filter(function (x) { return x !== p })
+  }
+}
+
+function versionHasReleased(v) {
+  return releases.value.some(function (r) {
+    return versionLabel(r) === v && isReleased(r)
+  })
+}
+
+function toggleVersion(v) {
+  var idx = selectedVersions.value.indexOf(v)
+  if (idx === -1) {
+    selectedVersions.value = selectedVersions.value.concat(v)
+    // Selecting an already-released version implies the user wants to see it —
+    // auto-untick "Hide released" so the view isn't emptied out. Kept truthful:
+    // the checkbox reflects that released versions are now shown.
+    if (hideReleased.value && versionHasReleased(v)) {
+      hideReleased.value = false
+    }
+  } else {
+    selectedVersions.value = selectedVersions.value.filter(function (x) { return x !== v })
+  }
 }
 
 function nextMilestone(release) {
@@ -265,14 +337,88 @@ const streams = computed(() => {
   return Object.keys(set).sort()
 })
 
-const filteredReleases = computed(() => {
+const availableVersions = computed(() => {
+  var seen = {}
+  var list = []
+  var base = releases.value
+  if (selectedProducts.value.length > 0) {
+    base = base.filter(r => selectedProducts.value.indexOf(getProduct(r)) !== -1)
+  }
+  for (var i = 0; i < base.length; i++) {
+    var v = versionLabel(base[i])
+    if (v && !seen[v]) {
+      seen[v] = true
+      list.push(v)
+    }
+  }
+  list.sort(function (a, b) {
+    var ma = /^(\d+)\.(\d+)\s+(EA(\d+)|GA)$/.exec(a)
+    var mb = /^(\d+)\.(\d+)\s+(EA(\d+)|GA)$/.exec(b)
+    if (!ma && !mb) return a.localeCompare(b)
+    if (!ma) return 1
+    if (!mb) return -1
+    var ca = parseInt(ma[1]) * 100 + parseInt(ma[2])
+    var cb = parseInt(mb[1]) * 100 + parseInt(mb[2])
+    if (ca !== cb) return cb - ca
+    var oa = ma[3] === 'GA' ? 99 : parseInt(ma[4])
+    var ob = mb[3] === 'GA' ? 99 : parseInt(mb[4])
+    return ob - oa
+  })
+  return list
+})
+
+const baseFilteredReleases = computed(() => {
   let list = releases.value
-  if (selectedProduct.value) {
-    list = list.filter(r => getProduct(r) === selectedProduct.value)
+  if (selectedProducts.value.length > 0) {
+    list = list.filter(r => selectedProducts.value.indexOf(getProduct(r)) !== -1)
   }
   if (selectedStream.value) {
     list = list.filter(r => getStream(r) === selectedStream.value)
   }
+  if (selectedVersions.value.length > 0) {
+    list = list.filter(r => {
+      var v = versionLabel(r)
+      return v && selectedVersions.value.indexOf(v) !== -1
+    })
+  }
+  return list
+})
+
+// Release IDs the timeline should auto-fit into view. Populated only when the user
+// ADDS a version to the selection — then it holds the IDs of the newest selected
+// version's releases, whether that version is already released (milestones in the
+// past, off-screen to the left) or still upcoming (milestones in the future,
+// off-screen to the right). Either way the timeline shifts its window to bring the
+// cards into view. A deselection never repopulates it (set to []), so removing a
+// pill leaves the timeline view untouched.
+const focusReleaseIds = ref([])
+
+// IDs of the newest selected version's releases, or [] when nothing is selected.
+function newestSelectionIds() {
+  if (selectedVersions.value.length === 0) return []
+  let newest = null
+  for (let i = 0; i < availableVersions.value.length; i++) {
+    if (selectedVersions.value.indexOf(availableVersions.value[i]) !== -1) {
+      newest = availableVersions.value[i]
+      break
+    }
+  }
+  if (!newest) return []
+  const ids = []
+  for (let j = 0; j < baseFilteredReleases.value.length; j++) {
+    const r = baseFilteredReleases.value[j]
+    if (versionLabel(r) === newest) ids.push(r.id)
+  }
+  return ids
+}
+
+watch(selectedVersions, (curr, prev) => {
+  const added = curr.some(v => !prev || prev.indexOf(v) === -1)
+  focusReleaseIds.value = added ? newestSelectionIds() : []
+})
+
+const filteredReleases = computed(() => {
+  let list = baseFilteredReleases.value
   if (hideReleased.value) {
     list = list.filter(r => !isReleased(r))
   }
@@ -312,27 +458,48 @@ const MILESTONE_TYPES = [
   { key: 'ga', label: 'Release Date' }
 ]
 
-const upcomingMilestoneCards = computed(() => {
-  const candidates = []
+const milestoneCards = computed(() => {
+  const upcoming = []
+  const past = []
   for (let i = 0; i < allSortedReleases.value.length; i++) {
     const r = allSortedReleases.value[i]
     const ms = r.milestones || {}
     for (let j = 0; j < MILESTONE_TYPES.length; j++) {
       const mt = MILESTONE_TYPES[j]
       const days = daysFromNow(ms[mt.key])
-      if (days !== null && days >= 0) {
-        candidates.push({
-          releaseName: r.displayName || r.id,
-          label: mt.label,
-          type: mt.key,
-          date: ms[mt.key],
-          days
-        })
+      if (days === null) continue
+      const card = {
+        releaseName: r.displayName || r.id,
+        label: mt.label,
+        type: mt.key,
+        date: ms[mt.key],
+        days,
+        past: days < 0
       }
+      if (days >= 0) upcoming.push(card)
+      else past.push(card)
     }
   }
-  candidates.sort((a, b) => a.days - b.days)
-  return candidates.slice(0, 4)
+  // Prefer upcoming milestone countdowns (nearest first).
+  if (upcoming.length) {
+    upcoming.sort((a, b) => a.days - b.days)
+    return upcoming.slice(0, 4)
+  }
+  // No upcoming milestones (e.g. an already-released version is selected):
+  // keep the tiles visible showing the most recent past milestones (least days ago first).
+  if (past.length) {
+    past.sort((a, b) => b.days - a.days)
+    return past.slice(0, 4)
+  }
+  // No dated milestones at all — surface an N/A tile per release so the row never disappears.
+  return allSortedReleases.value.slice(0, 4).map(r => ({
+    releaseName: r.displayName || r.id,
+    label: 'Release Date',
+    type: 'ga',
+    date: null,
+    days: null,
+    na: true
+  }))
 })
 
 function isReleased(release) {

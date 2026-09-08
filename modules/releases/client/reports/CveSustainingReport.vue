@@ -10,11 +10,20 @@
         <ArrowLeft :size="18" />
       </button>
       <div class="flex-1">
-        <h2 class="text-xl font-bold text-gray-900 dark:text-gray-100">RHOAI Sustaining (CVEs)</h2>
+        <h2 class="text-xl font-bold text-gray-900 dark:text-gray-100">RHAI Sustaining (CVEs)</h2>
         <p v-if="data?.lastRefreshed" class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
           Last refreshed: {{ formatDate(data.lastRefreshed) }}
         </p>
       </div>
+      <a
+        href="https://drive.google.com/file/d/1af_JSj48byj_Quhw4bVJiO9eJ1pgdjY2/view?usp=drive_link"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border transition-colors bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 border-primary-200 dark:border-primary-700 hover:bg-primary-100 dark:hover:bg-primary-900/50"
+      >
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></svg>
+        Video Demo
+      </a>
       <button
         @click="handleRefresh"
         :disabled="refreshing"
@@ -90,6 +99,117 @@
         </div>
       </div>
 
+      <!-- SLA Compliance (quarter-over-quarter) -->
+      <section v-if="slaQuarters.length" class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5">
+        <div class="mb-4">
+          <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">CVE SLA Compliance</h3>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Resolved on or before due date. Only CVEs with both a due date and resolution date are evaluated.</p>
+        </div>
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <a v-for="(q, idx) in slaQuarters" :key="q.label"
+            :href="q.total_jql" target="_blank" rel="noopener noreferrer"
+            class="rounded-lg border hover:shadow-md transition-shadow cursor-pointer flex overflow-hidden"
+            :class="slaCardClasses(q.pct)"
+            :title="`${q.label}: ${q.metSla} / ${q.total} CVEs met SLA — click to view in Jira`">
+            <div class="flex items-center justify-center px-3 bg-black/5 dark:bg-white/5 border-r border-current/10 min-w-[60px]">
+              <p class="text-xs font-bold uppercase tracking-wide opacity-70 text-center leading-tight">{{ q.label }}</p>
+            </div>
+            <div class="flex-1 p-4 text-center">
+              <p class="text-3xl font-extrabold">{{ q.pct }}%</p>
+              <div v-if="idx === slaQuarters.length - 1 && slaQuarters.length >= 2" class="mt-0.5">
+                <span class="text-[10px] font-semibold" :class="slaDeltaClass">
+                  {{ slaDelta > 0 ? '+' : '' }}{{ slaDelta }}pp {{ slaDelta >= 0 ? '&#9650;' : '&#9660;' }}
+                </span>
+              </div>
+              <p class="text-xs mt-1 opacity-60">{{ q.metSla }} / {{ q.total }} met SLA</p>
+            </div>
+          </a>
+        </div>
+      </section>
+
+      <!-- Fix Availability at Release -->
+      <section v-if="fixAvail.metrics" class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Summary Metrics</h3>
+          <select v-if="fixAvail.releases?.length > 1" v-model="fixAvailRelease"
+            class="text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-500">
+            <option v-for="r in fixAvail.releases" :key="r" :value="r">{{ r }}</option>
+          </select>
+        </div>
+
+        <!--  Summary Metrics cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div v-for="card in summaryMetricCards" :key="card.label" class="border-l-4 border-l-red-500 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+            <div class="flex items-center gap-1.5 mb-2">
+              <span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ card.label }}</span>
+              <span class="relative group">
+                <HelpCircle :size="13" class="text-gray-400 dark:text-gray-500 cursor-help" />
+                <span class="absolute bottom-full left-0 mb-1.5 w-64 p-2 text-[10px] text-white bg-gray-900 dark:bg-gray-700 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20">
+                  {{ card.tooltip }}
+                </span>
+              </span>
+            </div>
+            <p class="text-3xl font-extrabold text-gray-900 dark:text-gray-100">{{ card.value }}</p>
+          </div>
+        </div>
+
+        <h4 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mt-5 mb-3">Fix Availability at Release</h4>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div class="border-l-4 border-l-red-500 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+            <div class="flex items-center gap-1.5 mb-2">
+              <span class="text-xs font-medium text-gray-600 dark:text-gray-400">% CVEs with No Fix at Release</span>
+              <span class="relative group">
+                <HelpCircle :size="13" class="text-gray-400 dark:text-gray-500 cursor-help" />
+                <span class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 w-64 p-2 text-[10px] text-white bg-gray-900 dark:bg-gray-700 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20">
+                  Percentage of CVEs (discovered at or before release) where no fix existed at release date (FIX_DATE &gt; RELEASE_DATE, NO-RH-VEX, or NOT-FOUND in FIX_DATE field)
+                </span>
+              </span>
+            </div>
+            <p class="text-3xl font-extrabold text-gray-900 dark:text-gray-100">{{ fixAvail.metrics.pctNoFix }}%</p>
+            <div class="mt-2 h-1.5 rounded-full overflow-hidden flex bg-gray-200 dark:bg-gray-600">
+              <div class="bg-blue-500 rounded-full" :style="{ width: fixAvail.metrics.pctNoFix + '%' }"></div>
+              <div class="bg-red-400 flex-1"></div>
+            </div>
+          </div>
+          <div class="border-l-4 border-l-red-500 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+            <div class="flex items-center gap-1.5 mb-2">
+              <span class="text-xs font-medium text-gray-600 dark:text-gray-400">% CVEs with Fix at Release</span>
+              <span class="relative group">
+                <HelpCircle :size="13" class="text-gray-400 dark:text-gray-500 cursor-help" />
+                <span class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 w-64 p-2 text-[10px] text-white bg-gray-900 dark:bg-gray-700 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20">
+                  Percentage of CVEs (discovered at or before release) where a fix already existed at release date (FIX_DATE &le; RELEASE_DATE). A fix is available but may or may not be available through Red Hat.
+                </span>
+              </span>
+            </div>
+            <p class="text-3xl font-extrabold text-gray-900 dark:text-gray-100">{{ fixAvail.metrics.pctWithFix }}%</p>
+            <div class="mt-2 h-1.5 rounded-full overflow-hidden flex bg-gray-200 dark:bg-gray-600">
+              <div class="bg-blue-500 rounded-full" :style="{ width: fixAvail.metrics.pctWithFix + '%' }"></div>
+              <div class="bg-red-400 flex-1"></div>
+            </div>
+          </div>
+          <div class="border-l-4 border-l-red-500 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+            <div class="flex items-center gap-1.5 mb-2">
+              <span class="text-xs font-medium text-gray-600 dark:text-gray-400">% with RH Fix Version</span>
+              <span class="relative group">
+                <HelpCircle :size="13" class="text-gray-400 dark:text-gray-500 cursor-help" />
+                <span class="absolute bottom-full right-0 mb-1.5 w-72 p-2 text-[10px] text-white bg-gray-900 dark:bg-gray-700 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20">
+                  Of CVEs with fix at release, this percentage has the fix-version field populated in VEX data, indicating Red Hat tracked a specific package version containing the fix.
+                </span>
+              </span>
+            </div>
+            <p class="text-3xl font-extrabold text-gray-900 dark:text-gray-100">{{ fixAvail.metrics.pctFixVersion }}%</p>
+            <div class="mt-2 h-1.5 rounded-full overflow-hidden flex bg-gray-200 dark:bg-gray-600">
+              <div class="bg-blue-500 rounded-full" :style="{ width: fixAvail.metrics.pctFixVersion + '%' }"></div>
+              <div class="bg-red-400 flex-1"></div>
+            </div>
+          </div>
+        </div>
+
+        <p class="text-xs text-gray-400 dark:text-gray-500 mt-3 text-right">
+          {{ fixAvail.metrics.totalCves.toLocaleString() }} CVEs evaluated &middot; Release {{ fixAvail.selected }}
+        </p>
+      </section>
+
       <!-- 2. CVEs by Due Date -->
       <section class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5">
         <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">CVEs by Due Date</h3>
@@ -108,9 +228,9 @@
         </p>
       </section>
 
-      <!-- 1. RHOAI Open CVEs (bar chart) -->
+      <!-- 1. RHAI Open CVEs (bar chart) -->
       <section class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5">
-        <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">RHOAI Open CVEs</h3>
+        <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">RHAI Open CVEs</h3>
         <div style="height: 340px;">
           <Bar :data="openCvesChartData" :options="openCvesChartOptions" />
         </div>
@@ -119,10 +239,10 @@
         </p>
       </section>
 
-      <!-- 4. Open RHOAI CVEs across all versions (pie) + 6. False Positive by VEX (doughnut) -->
+      <!-- 4. Open RHAI CVEs across all versions (pie) + 6. False Positive by VEX (doughnut) -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <section class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5">
-          <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">Open RHOAI CVEs across all versions</h3>
+          <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">Open RHAI CVEs across all versions</h3>
           <div style="height: 300px;">
             <Pie :data="versionPieData" :options="versionPieOptions" />
           </div>
@@ -132,11 +252,12 @@
         </section>
 
         <section class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5">
-          <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">
+          <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">
             False Positive by VEX Justification
             <span v-if="filters.hasActiveFilters.value" class="text-[10px] font-normal text-gray-400 dark:text-gray-500 ml-1">(all data)</span>
           </h3>
-          <div style="height: 300px;">
+          <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">All resolved false positives across all statuses</p>
+          <div style="height: 380px;">
             <Doughnut :data="vexDoughnutData" :options="vexPieOptions" />
           </div>
           <p class="text-xs text-gray-400 dark:text-gray-500 mt-2 text-right">
@@ -152,12 +273,16 @@
           <thead>
             <tr class="border-b border-gray-200 dark:border-gray-700">
               <th class="text-left py-2 pr-3 font-semibold text-gray-700 dark:text-gray-300 sticky left-0 bg-white dark:bg-gray-800 z-10">Components</th>
-              <th v-for="ver in agg.cvesAcrossVersions.value.versions" :key="ver" class="text-right py-2 px-2 font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap">{{ ver }}</th>
-              <th class="text-right py-2 pl-3 font-bold text-gray-900 dark:text-gray-100">Total</th>
+              <th v-for="ver in agg.cvesAcrossVersions.value.versions" :key="ver" class="text-right py-2 px-2 font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap cursor-pointer select-none hover:text-gray-900 dark:hover:text-gray-100" @click="toggleVersionTableSort(ver)">
+                {{ ver }} <span class="text-[9px] ml-0.5" :class="versionSortIcon(ver).active ? 'text-gray-900 dark:text-gray-100' : 'text-gray-300 dark:text-gray-600'">{{ versionSortIcon(ver).char }}</span>
+              </th>
+              <th class="text-right py-2 pl-3 font-bold text-gray-900 dark:text-gray-100 cursor-pointer select-none hover:text-primary-600 dark:hover:text-primary-400" @click="toggleVersionTableSort('total')">
+                Total <span class="text-[9px] ml-0.5" :class="versionSortIcon('total').active ? 'text-gray-900 dark:text-gray-100' : 'text-gray-300 dark:text-gray-600'">{{ versionSortIcon('total').char }}</span>
+              </th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in agg.cvesAcrossVersions.value.rows" :key="row.component" class="border-b border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30">
+            <tr v-for="row in sortedVersionTableRows" :key="row.component" class="border-b border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30">
               <td class="py-1.5 pr-3 text-gray-800 dark:text-gray-200 sticky left-0 bg-white dark:bg-gray-800 z-10">{{ row.component }}</td>
               <td v-for="ver in agg.cvesAcrossVersions.value.versions" :key="ver" class="text-right py-1.5 px-2 tabular-nums">
                 <button v-if="row.cells[ver]" class="font-semibold text-blue-600 dark:text-blue-400 underline decoration-dotted hover:decoration-solid cursor-pointer" @click="drillDownByMatrixCell(row.component, ver, row.cellJqls[ver])">{{ row.cells[ver] }}</button>
@@ -188,7 +313,7 @@
         </p>
       </section>
 
-      <!-- 5. CVEs by RHOAI Sustaining (assignee x status table) -->
+      <!-- 5. CVEs by RHAI Sustaining (assignee x status table) -->
       <section class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5 overflow-x-auto">
         <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">CVEs by Assignee</h3>
         <table class="w-full text-xs">
@@ -263,10 +388,10 @@
         </p>
       </section>
 
-      <!-- 9. RHOAI False Positives (multi-series line) -->
+      <!-- 9. RHAI False Positives (multi-series line) -->
       <section class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5">
         <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">
-          RHOAI False Positives
+          RHAI False Positives
           <span v-if="filters.hasActiveFilters.value" class="text-[10px] font-normal text-gray-400 dark:text-gray-500 ml-1">(all data)</span>
         </h3>
         <div style="height: 300px;">
@@ -294,8 +419,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, inject } from 'vue'
-import { ArrowLeft, RefreshCw, Shield } from 'lucide-vue-next'
+import { ref, computed, onMounted, onUnmounted, inject, watch } from 'vue'
+import { ArrowLeft, RefreshCw, Shield, HelpCircle } from 'lucide-vue-next'
 import { Bar, Pie, Doughnut, Line } from 'vue-chartjs'
 import {
   Chart as ChartJS,
@@ -445,6 +570,40 @@ async function handleRefresh() {
 
 onMounted(() => {
   loadData()
+  loadFixAvailability()
+})
+
+// ─── Fix Availability at Release ──────────────────────────────────────────────
+
+const fixAvail = ref({ releases: [], selected: null, metrics: null })
+const fixAvailRelease = ref(null)
+
+async function loadFixAvailability(release) {
+  try {
+    const qs = release ? `?release=${encodeURIComponent(release)}` : ''
+    const res = await fetch(`/api/modules/releases/cve-sustaining/fix-availability${qs}`)
+    if (!res.ok) return
+    const payload = await res.json()
+    fixAvail.value = payload
+    if (!fixAvailRelease.value && payload.selected) fixAvailRelease.value = payload.selected
+  } catch { /* no data available */ }
+}
+
+watch(fixAvailRelease, (newVal, oldVal) => {
+  if (newVal && oldVal && newVal !== oldVal) loadFixAvailability(newVal)
+})
+
+const summaryMetricCards = computed(() => {
+  const m = fixAvail.value?.metrics
+  if (!m) return []
+  return [
+    { label: 'Total CVEs at Release', value: (m.totalCves || 0).toLocaleString(), tooltip: 'Total CVE rows discovered at or before the release date, matching any active filters.' },
+    { label: 'CVEs with Fix Available at Release', value: (m.cvesWithFixAtRelease || 0).toLocaleString(), tooltip: 'CVEs where a fix already existed at release date (FIX_DATE ≤ RELEASE_DATE). Fix may be upstream or in other ecosystems.' },
+    { label: 'Unique CVEs', value: (m.uniqueCves || 0).toLocaleString(), tooltip: 'Distinct CVE IDs discovered at or before release. A single CVE can appear in multiple containers/packages.' },
+    { label: 'Number of Containers with CVEs', value: (m.containersWithCves || 0).toLocaleString(), tooltip: 'Unique containers (by SHA) that have at least one CVE discovered at or before release.' },
+    { label: 'Avg CVEs per Container', value: (m.avgCvesPerContainer || 0).toLocaleString(), tooltip: 'Average number of CVEs per container (total CVEs / unique containers).' },
+    { label: 'Container Freshness Score', value: (m.freshnessScore || 0) + '%', tooltip: 'Percentage of containers built within 30 days of the release date. Higher is better — indicates containers are up to date at release.' }
+  ]
 })
 
 function formatDate(iso) {
@@ -454,6 +613,35 @@ function formatDate(iso) {
     hour: '2-digit', minute: '2-digit'
   })
 }
+
+// ─── CVEs across versions table sort ─────────────────────────────────────────
+
+const versionTableSort = ref({ column: 'component', direction: 'asc' })
+
+function toggleVersionTableSort(column) {
+  if (versionTableSort.value.column === column) {
+    versionTableSort.value.direction = versionTableSort.value.direction === 'asc' ? 'desc' : 'asc'
+  } else {
+    versionTableSort.value = { column, direction: 'desc' }
+  }
+}
+
+function versionSortIcon(column) {
+  if (versionTableSort.value.column !== column) return { char: '▲▼', active: false }
+  return { char: versionTableSort.value.direction === 'asc' ? '▲' : '▼', active: true }
+}
+
+const sortedVersionTableRows = computed(() => {
+  const raw = agg.cvesAcrossVersions.value.rows
+  if (!raw || !raw.length) return []
+  const col = versionTableSort.value.column
+  const dir = versionTableSort.value.direction === 'asc' ? 1 : -1
+  return [...raw].sort((a, b) => {
+    if (col === 'component') return dir * a.component.localeCompare(b.component)
+    if (col === 'total') return dir * (a.total - b.total)
+    return dir * ((a.cells[col] || 0) - (b.cells[col] || 0))
+  })
+})
 
 // ─── Due Date Buckets ────────────────────────────────────────────────────────
 
@@ -465,9 +653,31 @@ const dueDateBuckets = computed(() => {
     { key: 'lt30', label: 'Due Date in Less Than 30 Days', pct: dd.lessThan30.pct, count: dd.lessThan30.count, jql: dd.lessThan30.jql, classes: 'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800' },
     { key: '30-90', label: 'Due Date Between 30 and 90 Days', pct: dd.between30And90.pct, count: dd.between30And90.count, jql: dd.between30And90.jql, classes: 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800' },
     { key: 'gt90', label: 'Due Date More Than 90 Days', pct: dd.moreThan90.pct, count: dd.moreThan90.count, jql: dd.moreThan90.jql, classes: 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' },
-    { key: 'none', label: 'None', pct: dd.none.pct, count: dd.none.count, jql: dd.none.jql, classes: 'text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700' }
+    { key: 'none', label: 'None (No due date)', pct: dd.none.pct, count: dd.none.count, jql: dd.none.jql, classes: 'text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700' }
   ]
 })
+
+// ─── SLA Compliance ──────────────────────────────────────────────────────────
+
+const slaQuarters = computed(() => data.value?.slaCompliance?.quarters || [])
+
+const slaDelta = computed(() => {
+  const q = slaQuarters.value
+  if (q.length < 2) return 0
+  return q[q.length - 1].pct - q[q.length - 2].pct
+})
+
+const slaDeltaClass = computed(() => {
+  if (slaDelta.value > 0) return 'text-emerald-600 dark:text-emerald-400'
+  if (slaDelta.value < 0) return 'text-red-600 dark:text-red-400'
+  return 'text-gray-500 dark:text-gray-400'
+})
+
+function slaCardClasses(pct) {
+  if (pct >= 80) return 'text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800'
+  if (pct >= 60) return 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
+  return 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+}
 
 // ─── Chart Colors ────────────────────────────────────────────────────────────
 
@@ -588,6 +798,12 @@ const PIE_LEGEND = {
   labels: { padding: 8, font: { size: 10 }, color: '#6b7280', usePointStyle: true, pointStyle: 'circle', boxWidth: 8 }
 }
 
+const PIE_LEGEND_BOTTOM = {
+  display: true,
+  position: 'bottom',
+  labels: { padding: 10, font: { size: 11 }, color: '#6b7280', usePointStyle: true, pointStyle: 'circle', boxWidth: 8 }
+}
+
 const versionPieOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
@@ -616,7 +832,7 @@ const vexPieOptions = computed(() => ({
   },
   onHover: (event, elements) => { event.native.target.style.cursor = elements.length > 0 ? 'pointer' : 'default' },
   plugins: {
-    legend: PIE_LEGEND,
+    legend: PIE_LEGEND_BOTTOM,
     tooltip: { callbacks: { label: (ctx) => `${ctx.raw} issues — click to view in Jira` } }
   }
 }))

@@ -4,13 +4,13 @@ import { countUniqueCategoryTotals } from './mergeReleaseDetails'
 // ═══ RELEASE NAME PARSING ═══
 
 /** Legacy: rhoai-3.6.EA1, RHELAI-3.2 */
-var LEGACY_PATTERN = /^(rhoai|rhelai|rhaii)[- _](\d+)\.(\d+)(?:\.EA(\d+))?$/i
+var LEGACY_PATTERN = /^(rhoai|rhelai|rhaii|rhai)[- _](\d+)\.(\d+)(?:\.EA(\d+))?$/i
 
 /** Product-family Jira names: "3.6 EA1 RHOAI RELEASE", "3.5 GA RHELAI RELEASE" */
-var PRODUCT_FAMILY_PATTERN = /^(\d+)\.(\d+)\s+(EA(\d+)|GA)\s+(RHOAI|RHAII|RHELAI)\s+RELEASE$/i
+var PRODUCT_FAMILY_PATTERN = /^(\d+)\.(\d+)\s+(EA(\d+)|GA)\s+(RHOAI|RHAII|RHELAI|RHAI)\s+RELEASE$/i
 
-var PRODUCT_ORDER = { rhoai: 0, rhaii: 1, rhelai: 2 }
-var PRODUCT_LABELS = { rhoai: 'RHOAI', rhelai: 'RHELAI', rhaii: 'RHAII' }
+var PRODUCT_ORDER = { rhoai: 0, rhaii: 1, rhelai: 2, rhai: 3 }
+var PRODUCT_LABELS = { rhoai: 'RHOAI', rhelai: 'RHELAI', rhaii: 'RHAII', rhai: 'RHAI' }
 
 /**
  * Parse a release name into structured parts.
@@ -85,7 +85,7 @@ function formatSortedVersions(value) {
 function extractProduct(name) {
   var parsed = parseReleaseName(name)
   if (parsed) return parsed.product
-  var m = /^(rhoai|rhelai|rhaii)/i.exec(name)
+  var m = /^(rhoai|rhelai|rhaii|rhai)/i.exec(name)
   return m ? m[1].toLowerCase() : null
 }
 
@@ -152,13 +152,13 @@ function getAlignmentTarget(days) {
 function extractFamily(name) {
   var parsed = parseReleaseName(name)
   if (parsed) return parsed.product + '-' + parsed.major + '.' + parsed.minor
-  var m = /^(rhoai|rhelai|rhaii)[- _](\d+\.\d+)/i.exec(name)
+  var m = /^(rhoai|rhelai|rhaii|rhai)[- _](\d+\.\d+)/i.exec(name)
   if (m) return m[1].toLowerCase() + '-' + m[2]
   return name.toLowerCase()
 }
 
 function familyLabel(familyKey) {
-  var m = /^(rhoai|rhelai|rhaii)-(.+)$/.exec(familyKey)
+  var m = /^(rhoai|rhelai|rhaii|rhai)-(.+)$/.exec(familyKey)
   if (m) return PRODUCT_LABELS[m[1]] + ' ' + m[2]
   return familyKey
 }
@@ -167,6 +167,7 @@ function sumRows(rows) {
   var total = 0
   var alignedOnTime = 0
   var alignedLate = 0
+  var afterRequested = 0
   var tvOnly = 0
   var fvOnly = 0
   var misaligned = 0
@@ -181,6 +182,7 @@ function sumRows(rows) {
     // Prefer 5-category fields; fall back to pre-migration `aligned` / `mismatched`
     alignedOnTime += r.aligned_on_time != null ? r.aligned_on_time : (r.aligned || 0)
     alignedLate += r.aligned_late || 0
+    afterRequested += r.after_requested || 0
     tvOnly += r.tv_only || 0
     fvOnly += r.fv_only || 0
     misaligned += r.misaligned != null ? r.misaligned : (r.mismatched || 0)
@@ -190,6 +192,7 @@ function sumRows(rows) {
     total: total,
     aligned_on_time: alignedOnTime,
     aligned_late: alignedLate,
+    after_requested: afterRequested,
     tv_only: tvOnly,
     fv_only: fvOnly,
     misaligned: misaligned,
@@ -359,7 +362,7 @@ export function useReleaseFamily(filteredSummary, data) {
         return compareReleases(a.release, b.release) * dir
       }
       if (col === 'alignment_pct' || col === 'total' || col === 'aligned_on_time' || col === 'aligned_late' ||
-          col === 'tv_only' || col === 'fv_only' || col === 'misaligned') {
+          col === 'after_requested' || col === 'tv_only' || col === 'fv_only' || col === 'misaligned') {
         va = a[col] ?? 0
         vb = b[col] ?? 0
         return (va - vb) * dir

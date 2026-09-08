@@ -73,6 +73,8 @@ export const viewOwners = {
   // system-health
   'system-health/component-maturity':              'Dana Gutride',
   'system-health/disconnected-repo-detail':        'Ajay Jaganathan',
+  'system-health/e2e-run-detail':                  'Ajay Jaganathan',
+  'system-health/odh-e2e-health':                  'Ajay Jaganathan',
   'system-health/quality-analysis':                'Dana Gutride',
 
   // team-tracker
@@ -109,13 +111,15 @@ export const viewOwners = {
   // These override the view-level owner when a specific tab is active.
 
   // releases > execute
-  'releases/execute/feature-list':                 'Alex Corvin',
-  'releases/execute/feature-status':               'Saiesh Prabhu',
+  'releases/execute/board':                        'Saiesh Prabhu',
+  'releases/execute/signals':                      'Alex Corvin',
+  'releases/execute/table':                        'Alex Corvin',
 
   // releases > plan
   'releases/plan/bu-feedback':                     'Saiesh Prabhu',
   'releases/plan/feature-readiness':               'Erle Marion',
   'releases/plan/outcomes':                        'Erle Marion',
+  'releases/plan/pm-hub':                          'yuvalluria',
 
   // releases > registry
   'releases/registry/hygiene':                     'Alex Corvin',
@@ -139,10 +143,10 @@ export const viewOwners = {
   'releases/reports/feature-pressure':             'Dimitri Saridakis',
   'releases/reports/program-hygiene':              'Alex Corvin',
   'releases/reports/release-readiness':            'Arthy Loganathan',
+  'releases/reports/rhoai-component-architectures': 'Waldemar Znoinski',
   'releases/reports/tv-fv-delta':                  'Dimitri Saridakis',
 
   // team-tracker > reports
-  'team-tracker/reports/allocation':               'Alex Corvin',
   'team-tracker/reports/team-comparison':          'Alex Corvin',
   'team-tracker/reports/trends':                   'Alex Corvin',
 }

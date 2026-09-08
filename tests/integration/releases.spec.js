@@ -1,6 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const { DEFAULT_PAGE_WAIT_TIME } = require('./constants');
 const { setupErrorTracking, logCapturedErrors } = require('./helpers');
+const { unexpectedDemoResourceErrors, dismissHygieneWelcome } = require('./execute-helpers');
 
 /**
  * Integration tests for Releases module
@@ -49,7 +50,7 @@ test.describe('Releases Module @releases', () => {
       console.log(`  ${req.method} ${req.url}`);
     });
 
-    expect(page.errors).toHaveLength(0);
+    expect(unexpectedDemoResourceErrors(page)).toHaveLength(0);
   });
 
 });
@@ -155,7 +156,8 @@ test.describe('Releases Views @releases', () => {
       console.error(`${viewName} errors:`, page.errors);
     }
 
-    expect(page.errors).toHaveLength(0);
+    const unexpected = viewId === 'execute' ? unexpectedDemoResourceErrors(page) : page.errors;
+    expect(unexpected).toHaveLength(0);
   }
 
   test('should load Plan view', async ({ page }) => {
@@ -231,6 +233,7 @@ test.describe('Releases PM Hub @releases', () => {
     const releaseFilter = page.locator('text=Release');
     await expect(componentFilter.first()).toBeVisible();
     await expect(releaseFilter.first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Hide Closed' })).toHaveCount(0);
 
     expect(page.errors).toHaveLength(0);
   });
@@ -258,13 +261,14 @@ test.describe('Releases PM Hub @releases', () => {
     expect(body.error).toContain('filter');
   });
 
-  test('component-release-load returns velocity with age and component fields', async ({ request }) => {
+  test('component-release-load hides velocity while Feature/Initiative load remains', async ({ request }) => {
     const componentsRes = await request.get('/api/modules/releases/pm-hub/jira/components');
     const componentsBody = await componentsRes.json();
     if (!componentsBody.components || componentsBody.components.length === 0) {
       test.skip();
       return;
     }
+    expect(componentsBody.projects).toEqual(expect.arrayContaining(['RHAISTRAT', 'AIPCC']));
     var compName = componentsBody.components[0].name;
     var res = await request.get('/api/modules/releases/pm-hub/component-release-load?components=' + encodeURIComponent(compName));
     if (!res.ok()) {
@@ -272,28 +276,16 @@ test.describe('Releases PM Hub @releases', () => {
       return;
     }
     var body = await res.json();
-    expect(body).toHaveProperty('velocity');
-    var vel = body.velocity;
-    expect(vel).toHaveProperty('avgPerRelease');
-    expect(vel).toHaveProperty('totalResolved');
-    expect(vel).toHaveProperty('hasPartialYear');
-    expect(vel).toHaveProperty('components');
-    expect(vel).toHaveProperty('jql');
-    expect(typeof vel.hasPartialYear).toBe('boolean');
-    if (vel.components.length > 0) {
-      var comp = vel.components[0];
-      expect(comp).toHaveProperty('component');
-      expect(comp).toHaveProperty('resolved');
-      expect(comp).toHaveProperty('releases');
-      expect(comp).toHaveProperty('avgPerRelease');
-      expect(comp).toHaveProperty('activeWeeks');
-      expect(comp).toHaveProperty('isPartialYear');
-      expect(typeof comp.isPartialYear).toBe('boolean');
-      expect(typeof comp.activeWeeks).toBe('number');
-    }
+    expect(body).toHaveProperty('groups');
+    expect(body.velocity).toBeNull();
+    expect(body).toHaveProperty('delivered');
+    expect(body.delivered).toHaveProperty('issues');
+    expect(Array.isArray(body.delivered.issues)).toBe(true);
+    expect(body.delivered).toHaveProperty('timedOut');
+    expect(body.delivered.skipped).toBe('no-versions');
   });
 
-  test('should show velocity summary card and per-component badges', async ({ page }) => {
+  test('should show Requested/Committed load KPIs without velocity card', async ({ page }) => {
     await page.goto('/#/releases/plan');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
@@ -315,17 +307,54 @@ test.describe('Releases PM Hub @releases', () => {
       await firstOption.click();
       await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
 
-      // Verify the Avg Features Delivered summary card is visible
-      var avgCard = page.locator('text=Avg Features Delivered');
-      await expect(avgCard.first()).toBeVisible();
-
-      // Check for component rows with velocity badges (avg/rel text)
-      var velocityBadges = page.locator('text=avg/rel');
-      var badgeCount = await velocityBadges.count();
-      // Velocity badges appear on component rows when data is loaded
-      // May be 0 if the component has no resolved features in the last year
-      expect(badgeCount).toBeGreaterThanOrEqual(0);
+      await expect(page.locator('text=Requested').first()).toBeVisible();
+      await expect(page.locator('text=Committed').first()).toBeVisible();
+      await expect(page.locator('text=Delivered').first()).toBeVisible();
+      await expect(page.getByText('Early or as requested', { exact: true }).first()).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Align legend' }).first()).toBeVisible();
+      await expect(page.locator('text=Selected scope').first()).toBeVisible();
+      await expect(page.locator('text=Avg Features Delivered')).toHaveCount(0);
+      await expect(page.locator('text=avg/rel')).toHaveCount(0);
     }
+
+    expect(page.errors).toHaveLength(0);
+  });
+
+  test('auto-loads data on mount when version filter is saved in localStorage', async ({ page }) => {
+    // Seed a version filter. Version labels map directly to PORTFOLIO_VERSIONS so the
+    // watcher fires as soon as selectedVersions is restored — no component list needed.
+    await page.addInitScript(`
+      localStorage.setItem('pm-hub-filters', JSON.stringify({
+        components: [],
+        pillars: [],
+        versions: ['3.5']
+      }));
+    `);
+
+    // Track whether the component-release-load API is called automatically on mount.
+    var loadRequests = [];
+    page.on('request', function(req) {
+      if (req.url().includes('/pm-hub/component-release-load')) loadRequests.push(req.url());
+    });
+
+    await page.goto('/#/releases/plan');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    await page.locator('button', { hasText: 'PM Hub' }).click();
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    var reportCard = page.locator('.cursor-pointer', { hasText: 'Component Release Load Tracking' });
+    await reportCard.first().click();
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    // The API must have been called — savedVersions triggers loadData() automatically on mount.
+    expect(loadRequests.length).toBeGreaterThan(0);
+
+    // The "select filters" empty prompt must NOT be visible (hasFetched=true).
+    var emptyPrompt = page.locator('text=Select components and/or releases to view data.');
+    await expect(emptyPrompt).not.toBeVisible();
 
     expect(page.errors).toHaveLength(0);
   });
@@ -339,6 +368,146 @@ test.describe('Releases PM Hub @releases', () => {
     expect(body.pillars.length).toBeGreaterThan(0);
     expect(body.pillars[0]).toHaveProperty('name');
     expect(body.pillars[0]).toHaveProperty('components');
+  });
+});
+
+/**
+ * Field and BU Feedback (Plan tab)
+ *
+ * Verify the Field and BU Feedback tab loads under Plan, renders the compact
+ * table chrome (search + filters), and that the planning API responds.
+ */
+test.describe('Releases Field and BU Feedback @releases', () => {
+  test.beforeEach(async ({ page }) => {
+    setupErrorTracking(page);
+  });
+
+  test.afterEach(async ({ page }, testInfo) => {
+    logCapturedErrors(page, testInfo);
+  });
+
+  test('should show Field and BU Feedback tab under Plan', async ({ page }) => {
+    await page.goto('/#/releases/plan');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    const feedbackTab = page.locator('button', { hasText: 'Field and BU Feedback' });
+    await expect(feedbackTab).toBeVisible();
+
+    await feedbackTab.click();
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    await expect(page.locator('h2', { hasText: 'Field and BU Feedback' })).toBeVisible();
+    await expect(page.getByTestId('bu-feedback-search')).toBeVisible();
+    await expect(page.getByTestId('bu-feedback-table')).toBeVisible();
+    await expect(page.getByTestId('bu-feedback-filter-type')).toBeVisible();
+    expect(page.errors).toHaveLength(0);
+  });
+
+  test('Field and BU Feedback deep link loads compact table chrome', async ({ page }) => {
+    await page.goto('/#/releases/plan?tab=bu-feedback');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    await expect(page.locator('h2', { hasText: 'Field and BU Feedback' })).toBeVisible();
+    await expect(page.getByTestId('bu-feedback-search')).toBeVisible();
+    await expect(page.getByTestId('bu-feedback-filter-status')).toBeVisible();
+    await expect(page.getByTestId('bu-feedback-filter-component')).toBeVisible();
+
+    const table = page.getByTestId('bu-feedback-table');
+    await expect(table).toBeVisible();
+    await expect(page.locator('thead th', { hasText: 'Issue' }).first()).toBeVisible();
+    await expect(page.locator('thead th', { hasText: 'Status' }).first()).toBeVisible();
+    await expect(page.locator('thead select')).toHaveCount(0);
+
+    expect(page.errors).toHaveLength(0);
+  });
+
+  test('bu-feedback API returns issues with resolved and inProgressAt fields', async ({ request }) => {
+    const apiResponse = await request.get('/api/modules/releases/planning/bu-feedback');
+    expect(apiResponse.ok()).toBe(true);
+    const body = await apiResponse.json();
+    expect(body).toHaveProperty('issues');
+    expect(Array.isArray(body.issues)).toBe(true);
+    if (body.issues.length > 0) {
+      expect(body.issues[0]).toHaveProperty('resolved');
+      expect(body.issues[0]).toHaveProperty('inProgressAt');
+    }
+  });
+
+  test('Executive Summary renders when issues exist', async ({ page }) => {
+    await page.goto('/#/releases/plan?tab=bu-feedback');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    const apiResponse = await page.request.get('/api/modules/releases/planning/bu-feedback');
+    const body = await apiResponse.json();
+    if (!body.issues || body.issues.length === 0) {
+      test.skip();
+      return;
+    }
+
+    const summary = page.getByTestId('bu-feedback-exec-summary');
+    await expect(summary).toBeVisible();
+    await expect(summary.locator('text=Executive Summary')).toBeVisible();
+    await expect(page.getByTestId('bu-feedback-metrics-table')).toBeVisible();
+
+    expect(page.errors).toHaveLength(0);
+  });
+
+  test('toggle switch between BU Feedback and SFDC Issues views', async ({ page }) => {
+    await page.goto('/#/releases/plan?tab=bu-feedback');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    await expect(page.locator('h2', { hasText: 'Field and BU Feedback' })).toBeVisible();
+    const sfdcTab = page.locator('button[role="tab"]', { hasText: 'SFDC Issues' });
+    await expect(sfdcTab).toBeVisible();
+
+    await sfdcTab.click();
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    await expect(page.locator('h2', { hasText: 'SFDC Issues' })).toBeVisible();
+    await expect(page.getByTestId('bu-feedback-table')).toBeVisible();
+
+    expect(page.errors).toHaveLength(0);
+  });
+
+  test('sfdc-issues API returns issues with sfdcCasesCount', async ({ request }) => {
+    const apiResponse = await request.get('/api/modules/releases/planning/sfdc-issues');
+    expect(apiResponse.ok()).toBe(true);
+    const body = await apiResponse.json();
+    expect(body).toHaveProperty('issues');
+    expect(Array.isArray(body.issues)).toBe(true);
+    if (body.issues.length > 0) {
+      expect(body.issues[0]).toHaveProperty('sfdcCasesCount');
+      expect(body.issues[0]).toHaveProperty('hasFeedbackLabel');
+    }
+  });
+
+  test('SFDC tab switch works without errors', async ({ page, request }) => {
+    const apiRes = await request.get('/api/modules/releases/planning/sfdc-issues');
+    const body = await apiRes.json();
+    const hasIssues = body.issues && body.issues.length > 0;
+
+    await page.goto('/#/releases/plan?tab=bu-feedback');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    const sfdcTab = page.locator('button[role="tab"]', { hasText: 'SFDC Issues' });
+    await sfdcTab.click();
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    await expect(page.locator('h2', { hasText: 'SFDC Issues' })).toBeVisible();
+
+    if (hasIssues) {
+      await expect(page.getByTestId('bu-feedback-exec-summary')).toBeVisible();
+    }
+
+    expect(page.errors).toHaveLength(0);
   });
 });
 
@@ -629,11 +798,28 @@ test.describe('Releases FPDoR Readiness @releases', () => {
     var headerCount = await headerRow.count();
     expect(headerCount).toBeGreaterThan(5);
 
+    // Use hasText (not getByRole name) — Score/Readiness/Align headers embed tooltip copy in the accessible name.
     var scoreHeader = page.locator('thead th', { hasText: 'Score' });
     await expect(scoreHeader.first()).toBeVisible();
+    await expect(scoreHeader.first()).toHaveAttribute('aria-sort', 'descending');
 
     var readinessHeader = page.locator('thead th', { hasText: 'Readiness' });
     await expect(readinessHeader.first()).toBeVisible();
+    await expect(readinessHeader.first()).toHaveClass(/cursor-pointer/);
+
+    await readinessHeader.first().click();
+    await expect(readinessHeader.first()).toHaveAttribute('aria-sort', 'ascending');
+
+    await scoreHeader.first().click();
+    await expect(scoreHeader.first()).toHaveAttribute('aria-sort', 'descending');
+    await scoreHeader.first().click();
+    await expect(scoreHeader.first()).toHaveAttribute('aria-sort', 'ascending');
+    await scoreHeader.first().click();
+    await expect(scoreHeader.first()).toHaveAttribute('aria-sort', 'none');
+
+    var alignHeader = page.locator('thead th', { hasText: 'TV/FV Align' });
+    await expect(alignHeader.first()).toBeVisible();
+    await expect(alignHeader.first()).toHaveClass(/cursor-pointer/);
 
     expect(page.errors).toHaveLength(0);
   });
@@ -670,6 +856,7 @@ test.describe('Releases FPDoR Readiness @releases', () => {
     await expect(page.getByRole('button', { name: /All products/i })).toBeVisible();
     await expect(page.getByText('Failed FPDoR', { exact: true }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: /Any failed item/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /All alignments/i })).toBeVisible();
     await expect(page.getByRole('button', { name: /Export CSV/i })).toBeVisible();
 
     expect(page.errors).toHaveLength(0);
@@ -739,7 +926,7 @@ test.describe('Releases FPDoR Readiness @releases', () => {
     expect(item).toHaveProperty('group');
     expect(['mandatory', 'criteria']).toContain(item.group);
     expect(item.source).toBe('jira');
-    expect(['passed', 'failed', 'not-checked']).toContain(item.state);
+    expect(['passed', 'failed', 'not-checked', 'not-applicable']).toContain(item.state);
 
     expect(sample).toHaveProperty('readinessGates');
     expect(sample.readinessGates).toHaveProperty('fpDorPassed');
@@ -752,6 +939,19 @@ test.describe('Releases FPDoR Readiness @releases', () => {
     expect(typeof sample.readinessGates.fpDorTotal).toBe('number');
     expect(typeof sample.readinessGates.fpDorApplicable).toBe('number');
     expect(typeof sample.readinessGates.pastRefinement).toBe('boolean');
+
+    // TV/FV Align (same categories as Reports → TV vs FV Delta / PM Hub)
+    expect(sample).toHaveProperty('alignmentCategory');
+    if (sample.alignmentCategory != null) {
+      expect([
+        'aligned_on_time',
+        'aligned_late',
+        'after_requested',
+        'misaligned',
+        'tv_only',
+        'fv_only'
+      ]).toContain(sample.alignmentCategory);
+    }
   });
 
   test('feature-readiness API returns priority score breakdown', async ({ request }) => {
@@ -1042,7 +1242,7 @@ test.describe('Releases CVE Sustaining Report @releases', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
 
-    var card = page.locator('text=RHOAI Sustaining (CVEs)');
+    var card = page.locator('text=RHAI Sustaining (CVEs)');
     await expect(card.first()).toBeVisible();
 
     expect(page.errors).toHaveLength(0);
@@ -1054,7 +1254,7 @@ test.describe('Releases CVE Sustaining Report @releases', () => {
     await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
 
     // Report heading
-    await expect(page.locator('text=RHOAI Sustaining (CVEs)').first()).toBeVisible();
+    await expect(page.locator('text=RHAI Sustaining (CVEs)').first()).toBeVisible();
 
     // Open CVEs banner
     await expect(page.locator('text=Open CVEs').first()).toBeVisible();
@@ -1064,7 +1264,7 @@ test.describe('Releases CVE Sustaining Report @releases', () => {
     await expect(page.locator('text=Due Date Passed').first()).toBeVisible();
 
     // Bar chart section
-    await expect(page.locator('text=RHOAI Open CVEs').first()).toBeVisible();
+    await expect(page.locator('text=RHAI Open CVEs').first()).toBeVisible();
 
     // Version matrix table
     await expect(page.locator('text=CVEs across all versions').first()).toBeVisible();
@@ -1075,7 +1275,7 @@ test.describe('Releases CVE Sustaining Report @releases', () => {
     // Time series charts
     await expect(page.locator('text=Created vs Resolved').first()).toBeVisible();
     await expect(page.locator('text=Unresolved').first()).toBeVisible();
-    await expect(page.locator('text=RHOAI False Positives').first()).toBeVisible();
+    await expect(page.locator('text=RHAI False Positives').first()).toBeVisible();
 
     expect(page.errors).toHaveLength(0);
   });
@@ -1276,7 +1476,7 @@ test.describe('Program Hygiene Report @releases', () => {
     // Should show the release selector button (either in empty state or selection bar)
     await expect(page.locator('button', { hasText: 'Select Release' }).first()).toBeVisible();
 
-    expect(page.errors).toHaveLength(0);
+    expect(unexpectedDemoResourceErrors(page)).toHaveLength(0);
   });
 
   test('program hygiene API returns expected shape', async ({ request }) => {
@@ -1311,7 +1511,7 @@ test.describe('Program Hygiene Report @releases', () => {
     await page.keyboard.press('Escape');
     await page.waitForTimeout(300);
 
-    expect(page.errors).toHaveLength(0);
+    expect(unexpectedDemoResourceErrors(page)).toHaveLength(0);
   });
 
   test('shows summary cards and violation charts when data is available', async ({ page }) => {
@@ -1337,7 +1537,7 @@ test.describe('Program Hygiene Report @releases', () => {
       await expect(page.locator('button', { hasText: 'Team Accountability' }).first()).toBeVisible();
     }
 
-    expect(page.errors).toHaveLength(0);
+    expect(unexpectedDemoResourceErrors(page)).toHaveLength(0);
   });
 
   test('team accountability tab renders table', async ({ page }) => {
@@ -1358,6 +1558,478 @@ test.describe('Program Hygiene Report @releases', () => {
       await expect(page.locator('th', { hasText: 'With Violations' }).first()).toBeVisible();
     }
 
+    expect(unexpectedDemoResourceErrors(page)).toHaveLength(0);
+  });
+
+  test('field filter modal opens with the expected filter fields', async ({ page }) => {
+    await page.goto('/#/releases/reports?report=program-hygiene');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    // The Filters control only shows once a release is selected. In demo mode a
+    // default selection is auto-applied when the registry parses, so it is
+    // normally present; guard so the test is a no-op if the board is empty.
+    const filtersButton = page.locator('[data-testid="hygiene-report-filters-button"]').first();
+    const hasSelection = await filtersButton.isVisible().catch(() => false);
+
+    if (hasSelection) {
+      await filtersButton.click();
+      await page.waitForTimeout(300);
+
+      await expect(page.locator('h3', { hasText: 'Filters' }).first()).toBeVisible();
+      await expect(page.locator('text=Team').first()).toBeVisible();
+      await expect(page.locator('text=Component').first()).toBeVisible();
+      await expect(page.locator('text=Label').first()).toBeVisible();
+      await expect(page.locator('button', { hasText: 'Saved Presets' }).first()).toBeVisible();
+
+      await page.locator('button', { hasText: 'Done' }).first().click();
+      await page.waitForTimeout(300);
+    }
+
+    expect(unexpectedDemoResourceErrors(page)).toHaveLength(0);
+  });
+
+  test('clicking a feature row opens the summary drawer', async ({ page }) => {
+    await page.goto('/#/releases/reports?report=program-hygiene');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    // Requires a selection + loaded features; skip gracefully if the table is empty
+    const row = page.locator('[data-testid="hygiene-report-feature-row"]').first();
+    const hasRow = await row.isVisible().catch(() => false);
+
+    if (hasRow) {
+      await row.click();
+      await page.waitForTimeout(500);
+
+      const drawer = page.locator('[data-testid="feature-drawer"]');
+      await expect(drawer).toBeVisible();
+      await expect(drawer.locator('text=Status Summary').first()).toBeVisible();
+      await expect(drawer.locator('text=Hygiene Violations').first()).toBeVisible();
+      await expect(drawer.getByRole('button', { name: 'View full details' })).toBeVisible();
+      await expect(drawer.getByRole('link', { name: /Open in Jira/ })).toBeVisible();
+
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(300);
+      await expect(drawer).toHaveCount(0);
+    }
+
+    expect(unexpectedDemoResourceErrors(page)).toHaveLength(0);
+  });
+});
+
+/**
+ * Feature Execution workspace (Execute view)
+ *
+ * The three former Execute tabs (Feature Tracking, Feature List, Feature Status)
+ * are one workspace with Table / Kanban / Signals view modes. Legacy
+ * `?tab=feature-status` URLs map to Kanban. The shared release selector and
+ * hygiene filter/rules controls remain on this page.
+ */
+test.describe('Feature Execution workspace @releases', () => {
+  test.beforeEach(async ({ page }) => {
+    setupErrorTracking(page);
+  });
+
+  test.afterEach(async ({ page }, testInfo) => {
+    logCapturedErrors(page, testInfo);
+  });
+
+  test('legacy feature-status tab loads Kanban with toolbar controls', async ({ page }) => {
+    await page.goto('/#/releases/execute?tab=feature-status');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+    await dismissHygieneWelcome(page);
+
+    await expect(page.getByText('Feature Execution').first()).toBeVisible();
+    await expect(page.getByText('hygiene-rule compliance').first()).toBeVisible();
+
+    await expect(page.locator('[data-testid="hygiene-release-selector"]').first()).toBeVisible();
+    await expect(page.locator('[data-testid="hygiene-rules-button"]').first()).toBeVisible();
+    await expect(page.locator('[data-testid="execute-view-board"]').first()).toBeVisible();
+
+    expect(unexpectedDemoResourceErrors(page)).toHaveLength(0);
+  });
+
+  test('view toggle switches Table, Kanban, and Signals', async ({ page }) => {
+    await page.goto('/#/releases/execute');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+    await dismissHygieneWelcome(page);
+
+    await expect(page.locator('[data-testid="execute-view-toggle"]').first()).toBeVisible();
+
+    await page.locator('[data-testid="execute-view-board"]').first().click();
+    await page.waitForTimeout(300);
+    await expect(page.locator('[data-testid="execute-view-board"]').first()).toHaveAttribute('aria-selected', 'true');
+
+    await page.locator('[data-testid="execute-view-signals"]').first().click();
+    await page.waitForTimeout(300);
+    await expect(page.locator('[data-testid="execute-view-signals"]').first()).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('[data-testid="execute-kpi-cards"]')).toHaveCount(0);
+    const signalsSummary = page.locator('[data-testid="signals-progress-summary"]');
+    if (await signalsSummary.count()) {
+      await expect(signalsSummary.first()).toBeVisible();
+      await expect(signalsSummary.first().getByText('Features')).toBeVisible();
+      await expect(signalsSummary.first().getByText('Epics')).toBeVisible();
+    }
+
+    await page.locator('[data-testid="execute-view-table"]').first().click();
+    await page.waitForTimeout(300);
+    await expect(page.locator('[data-testid="execute-view-table"]').first()).toHaveAttribute('aria-selected', 'true');
+    const kpiCards = page.locator('[data-testid="execute-kpi-cards"]');
+    if (await kpiCards.count()) {
+      await expect(kpiCards.first()).toBeVisible();
+    }
+
+    expect(unexpectedDemoResourceErrors(page)).toHaveLength(0);
+  });
+
+  test('toolbar shows gear-driven version chips without a registry modal', async ({ page }) => {
+    await page.goto('/#/releases/execute?tab=feature-status');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+    await dismissHygieneWelcome(page);
+
+    await expect(page.locator('[data-testid="hygiene-release-selector"]').first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'All versions' })).toHaveCount(0);
+    await expect(page.getByText('Product Family', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Phase', { exact: true })).toHaveCount(0);
+    await expect(page.locator('button', { hasText: 'Apply' })).toHaveCount(0);
+
+    expect(unexpectedDemoResourceErrors(page)).toHaveLength(0);
+  });
+
+  test('version chips are ordered by planning freeze date earliest first', async ({ page, request }) => {
+    await page.goto('/#/releases/execute');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+    await dismissHygieneWelcome(page);
+
+    const chips = page.locator('[data-testid="hygiene-release-selector"] button');
+    await expect(chips.first()).toBeVisible();
+    const labels = (await chips.allTextContents()).map((t) => t.trim()).filter(Boolean);
+
+    const [configRes, versionsRes] = await Promise.all([
+      request.get('/api/modules/releases/execution/tracking/config'),
+      request.get('/api/modules/releases/execution/tracking/versions')
+    ]);
+    const config = await configRes.json();
+    const versionRows = (await versionsRes.json()).versions || [];
+    const apiDates = {};
+    for (const row of versionRows) {
+      if (row && row.version) apiDates[row.version] = row.planningFreezeDate || null;
+    }
+    function freezeFor(version) {
+      const entry = config.releases && config.releases[version];
+      if (entry && entry.planningFreezeOverride) return entry.planningFreezeOverride;
+      return apiDates[version] || null;
+    }
+    const expected = Object.keys(config.releases || {})
+      .filter((k) => String(k).trim())
+      .sort((a, b) => {
+        const da = freezeFor(a);
+        const db = freezeFor(b);
+        if (da && db) return da.localeCompare(db);
+        if (da && !db) return -1;
+        if (!da && db) return 1;
+        return String(b).localeCompare(String(a), undefined, { numeric: true });
+      });
+    expect(labels).toEqual(expected);
+
+    expect(unexpectedDemoResourceErrors(page)).toHaveLength(0);
+  });
+
+  test('hygiene rules modal is reachable from the toolbar', async ({ page }) => {
+    await page.goto('/#/releases/execute?tab=feature-status');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    // Dismiss the first-visit welcome modal, then reopen it via the toolbar button
+    await dismissHygieneWelcome(page);
+
+    await page.locator('[data-testid="hygiene-rules-button"]').first().click();
+    await page.waitForTimeout(300);
+
+    // Welcome/rules modal exposes a Hygiene Rules tab for discoverability
+    await expect(page.locator('text=Hygiene Rules').first()).toBeVisible();
+
+    expect(unexpectedDemoResourceErrors(page)).toHaveLength(0);
+  });
+
+  test('field filter modal opens with the expected filter fields', async ({ page }) => {
+    await page.goto('/#/releases/execute?tab=feature-status');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+    await dismissHygieneWelcome(page);
+
+    // The Filters control only shows once a gear-configured release is selected.
+    // A default version is auto-applied when tracking settings have releases.
+    const filtersButton = page.locator('[data-testid="hygiene-filters-button"]').first();
+    const hasSelection = await filtersButton.isVisible().catch(() => false);
+
+    if (hasSelection) {
+      await filtersButton.click();
+      await page.waitForTimeout(300);
+
+      // Modal heading and the six filter fields in the left pane
+      await expect(page.locator('h3', { hasText: 'Filters' }).first()).toBeVisible();
+      await expect(page.locator('text=Team').first()).toBeVisible();
+      await expect(page.locator('text=Component').first()).toBeVisible();
+      await expect(page.locator('text=Assignee').first()).toBeVisible();
+      await expect(page.locator('button', { hasText: 'Saved Presets' }).first()).toBeVisible();
+
+      await page.getByRole('button', { name: 'Done', exact: true }).click();
+      await page.waitForTimeout(300);
+    }
+
+    expect(unexpectedDemoResourceErrors(page)).toHaveLength(0);
+  });
+
+  test('clicking a feature card opens the summary drawer', async ({ page }) => {
+    await page.goto('/#/releases/execute?tab=feature-status');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+    await dismissHygieneWelcome(page);
+
+    // Requires loaded features; skip gracefully if the board is empty in this env
+    const card = page.locator('[data-testid="hygiene-feature-card"]').first();
+    const hasCard = await card.isVisible().catch(() => false);
+
+    if (hasCard) {
+      await card.click();
+      await page.waitForTimeout(400);
+
+      const drawer = page.locator('[data-testid="feature-drawer"]');
+      await expect(drawer).toBeVisible();
+
+      // Key sections
+      await expect(drawer.locator('text=Status Summary').first()).toBeVisible();
+      await expect(drawer.locator('text=Hygiene Violations').first()).toBeVisible();
+
+      // Both navigation affordances
+      await expect(drawer.getByRole('button', { name: 'View full details' })).toBeVisible();
+      const jiraLink = drawer.getByRole('link', { name: /Open in Jira/ });
+      await expect(jiraLink).toBeVisible();
+      await expect(jiraLink).toHaveAttribute('href', /redhat\.atlassian\.net\/browse\//);
+
+      // Close the drawer
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(300);
+      await expect(drawer).toHaveCount(0);
+    }
+
+    expect(unexpectedDemoResourceErrors(page)).toHaveLength(0);
+  });
+});
+
+test.describe('RHOAI Component Architectures Report @releases', () => {
+  test.beforeEach(async ({ page }) => {
+    setupErrorTracking(page);
+  });
+
+  test.afterEach(async ({ page }, testInfo) => {
+    logCapturedErrors(page, testInfo);
+  });
+
+  test('component architectures report loads with content', async ({ page }) => {
+    await page.goto('/#/releases/reports?report=rhoai-component-architectures');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    const heading = page.locator('text=RHOAI Component Architectures');
+    await expect(heading.first()).toBeVisible();
+
+    const productComponentHeader = page.locator('th:has-text("Product Component")');
+    await expect(productComponentHeader.first()).toBeVisible();
+
+    const jiraLinks = page.locator('a:has-text("JIRA")');
+    const jiraCount = await jiraLinks.count();
+    expect(jiraCount).toBeGreaterThan(0);
+
+    const maturityLinks = page.locator('a:has-text("Maturity")');
+    const maturityCount = await maturityLinks.count();
+    expect(maturityCount).toBeGreaterThan(0);
+
     expect(page.errors).toHaveLength(0);
+  });
+
+  test('component architectures API returns data', async ({ request }) => {
+    const res = await request.get('/api/modules/releases/rhoai-component-architectures');
+    expect(res.ok()).toBe(true);
+    const body = await res.json();
+    expect(body).toHaveProperty('branches');
+    expect(body).toHaveProperty('maturity');
+  });
+});
+
+/**
+ * AI Planner tab (Plan view)
+ *
+ * Verify the AI Planner tab is visible in the Plan sub-nav, becomes active
+ * on click, and renders the iframe that embeds the release planning dashboard.
+ */
+test.describe('Releases AI Planner tab @releases', () => {
+  test.beforeEach(async ({ page }) => {
+    setupErrorTracking(page);
+  });
+
+  test.afterEach(async ({ page }, testInfo) => {
+    logCapturedErrors(page, testInfo);
+  });
+
+  test('should show AI Planner tab under Plan', async ({ page }) => {
+    await page.goto('/#/releases/plan');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    const aiPlannerTab = page.locator('button', { hasText: 'AI Planner' });
+    await expect(aiPlannerTab).toBeVisible();
+
+    expect(page.errors).toHaveLength(0);
+  });
+
+  test('clicking AI Planner tab renders the iframe', async ({ page }) => {
+    await page.goto('/#/releases/plan');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    const aiPlannerTab = page.locator('button', { hasText: 'AI Planner' });
+    await aiPlannerTab.click();
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    const iframe = page.locator('iframe[title="AI-First Release Planner"]');
+    await expect(iframe).toBeVisible();
+
+    const src = await iframe.getAttribute('src');
+    expect(src).toContain('rhai-release-planner');
+
+    const errors = page.errors.filter(e => !e.message.includes('cross-origin subframe'));
+    expect(errors).toHaveLength(0);
+  });
+
+  test('AI Planner deep link activates the tab', async ({ page }) => {
+    await page.goto('/#/releases/plan?tab=ai-planner');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    const iframe = page.locator('iframe[title="AI-First Release Planner"]');
+    await expect(iframe).toBeVisible();
+
+    const errors = page.errors.filter(e => !e.message.includes('cross-origin subframe'));
+    expect(errors).toHaveLength(0);
+  });
+});
+
+/**
+ * Execute-page version deep-link
+ *
+ * The Feature Execution workspace honors a `?version=` route param so
+ * timeline cards (and shared links) can open a specific release pre-selected.
+ * See ~/.claude/plans/releases-timeline-execute-deeplink.md (RHOAIENG-82037).
+ */
+test.describe('Releases Execute deep-link @releases', () => {
+  test.beforeEach(async ({ page }) => {
+    setupErrorTracking(page);
+  });
+
+  test.afterEach(async ({ page }, testInfo) => {
+    logCapturedErrors(page, testInfo);
+  });
+
+  test('?version= pre-selects the matching version pill', async ({ page }) => {
+    // Discover a real pill label from the rendered demo data (do not hardcode).
+    await page.goto('/#/releases/execute');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    const pills = page.locator('button').filter({ hasText: /^\d+\.\d+(\.EA\d+)?$/ });
+    const count = await pills.count();
+    expect(count).toBeGreaterThan(0);
+
+    // Pick the last pill so the deep-link selects something other than the
+    // default (first) version — proving the param overrides the default.
+    const label = (await pills.nth(count - 1).textContent()).trim();
+
+    await page.goto('/#/releases/execute?version=' + encodeURIComponent(label));
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    // The active pill uses the CHIP_ACTIVE class set (border-primary-600) in
+    // ExecuteWorkspaceView; idle pills use border-gray-300.
+    const activePill = page.getByTestId('execute-version-' + label);
+    await expect(activePill).toHaveClass(/border-primary-600/);
+
+    // Demo Execute pages log expected 401/403/404 resource loads (missing
+    // field-options fixtures, hygiene/config requiring planning-manager); ignore
+    // those and assert only on unexpected errors, as the other Execute tests do.
+    expect(unexpectedDemoResourceErrors(page)).toHaveLength(0);
+  });
+
+  test('?products= pre-selects only the matching product', async ({ page }) => {
+    // Discover a real version that has more than one product so we can prove the
+    // product param narrows the selection rather than defaulting to all.
+    const res = await page.request.get('/api/modules/releases/execution/tracking/versions');
+    expect(res.ok()).toBeTruthy();
+    const body = await res.json();
+    const row = (body.versions || []).find((v) => v.products && v.products.length > 1);
+    expect(row).toBeTruthy();
+    const version = row.version;
+    const product = row.products[0];
+    const others = row.products.filter((p) => p !== product);
+
+    await page.goto('/#/releases/execute?version=' + encodeURIComponent(version) +
+      '&products=' + encodeURIComponent(product));
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    // The version pill is active.
+    await expect(page.getByTestId('execute-version-' + version)).toHaveClass(/border-primary-600/);
+
+    // The product param is honored: persistSelection writes the single selected
+    // product back to the URL, and none of the version's other products appear —
+    // proving it was not reconciled to "all products".
+    expect(page.url()).toContain('products=' + encodeURIComponent(product));
+    for (const other of others) {
+      expect(page.url()).not.toContain(other);
+    }
+
+    expect(unexpectedDemoResourceErrors(page)).toHaveLength(0);
+  });
+
+  test('post-mount hash change re-selects the version and its product', async ({ page }) => {
+    // Mount the Execute workspace on its default selection first.
+    await page.goto('/#/releases/execute');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    const res = await page.request.get('/api/modules/releases/execution/tracking/versions');
+    expect(res.ok()).toBeTruthy();
+    const body = await res.json();
+    const versions = body.versions || [];
+    const defaultVersion = versions[0] && versions[0].version;
+    // Pick a version different from the mount default (so the watcher's
+    // version-changed guard fires) that also has more than one product.
+    const target = versions.find(
+      (v) => v.version !== defaultVersion && v.products && v.products.length > 1
+    );
+    expect(target).toBeTruthy();
+    const product = target.products[0];
+    const others = target.products.filter((p) => p !== product);
+
+    // Change only the hash (no full navigation) — exercises the ExecuteWorkspaceView
+    // post-mount watcher rather than the mount-time restoreSelection path.
+    await page.evaluate((h) => { window.location.hash = h; },
+      '#/releases/execute?version=' + encodeURIComponent(target.version) +
+      '&products=' + encodeURIComponent(product) + '&view=board&tab=board');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    await expect(page.getByTestId('execute-version-' + target.version)).toHaveClass(/border-primary-600/);
+    expect(page.url()).toContain('products=' + encodeURIComponent(product));
+    for (const other of others) {
+      expect(page.url()).not.toContain(other);
+    }
+
+    expect(unexpectedDemoResourceErrors(page)).toHaveLength(0);
   });
 });

@@ -18,8 +18,9 @@ const registerFeaturePressureRoutes = require('./feature-pressure/routes');
 const registerPmHubRoutes = require('./pm-hub/routes');
 const registerDraftPlanRoutes = require('./draft-plans/routes');
 const registerReleaseReadinessRoutes = require('./release-readiness/routes');
-const registerCveSustainingRoutes = require('./cve-sustaining/routes');
+const { registerCveSustainingRoutes, registerFixAvailabilityRoutes } = require('./cve-sustaining/routes');
 const registerAiAdoptionRoutes = require('./ai-adoption/routes');
+const registerRhoaiComponentArchitecturesRoutes = require('./rhoai-component-architectures/routes');
 const { getAuditLog } = require('./planning/audit-log');
 
 /**
@@ -318,6 +319,11 @@ module.exports = async function registerRoutes(router, context) {
     requireScope,
     jira
   });
+  registerFixAvailabilityRoutes(cveSustainingRouter, {
+    storage,
+    requireAuth,
+    requireScope
+  });
   router.use('/cve-sustaining', cveSustainingRouter);
 
   // AI Adoption sub-router (mounted at /api/modules/releases/ai-adoption/)
@@ -329,6 +335,19 @@ module.exports = async function registerRoutes(router, context) {
     jira
   });
   router.use('/ai-adoption', aiAdoptionRouter);
+
+  // RHOAI Component Architectures sub-router (mounted at /api/modules/releases/rhoai-component-architectures/)
+  const rhoaiCompArchRouter = express.Router();
+  registerRhoaiComponentArchitecturesRoutes(rhoaiCompArchRouter, {
+    storage,
+    requireAuth,
+    requireAdmin,
+    requireScope,
+    secrets,
+    registerRefresh: context.registerRefresh || null,
+    isRefreshRunning: context.isRefreshRunning || null
+  });
+  router.use('/rhoai-component-architectures', rhoaiCompArchRouter);
 
   // ─── Unified Audit Routes ───
 

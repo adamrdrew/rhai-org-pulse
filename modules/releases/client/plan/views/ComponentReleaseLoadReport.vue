@@ -13,6 +13,30 @@
         </p>
       </div>
       <div class="flex items-center gap-2">
+        <div class="relative" ref="exportDropdownRef">
+          <button
+            type="button"
+            @click="toggleExportMenu"
+            :disabled="groups.length === 0 || loadingData"
+            class="px-2.5 py-1.5 text-xs font-medium rounded-md border transition-colors"
+            :class="groups.length === 0 || loadingData
+              ? 'text-gray-300 dark:text-gray-600 bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 cursor-not-allowed'
+              : 'text-gray-600 dark:text-gray-400 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'"
+            title="Export filtered data"
+          >Export</button>
+          <div v-if="exportDropdownOpen" class="absolute right-0 z-50 mt-1 w-40 rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg py-1" role="menu">
+            <button
+              role="menuitem"
+              @click="handleExportCsv"
+              class="w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+            >CSV (.csv)</button>
+            <button
+              role="menuitem"
+              @click="handleExportMarkdown"
+              class="w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+            >Markdown (.md)</button>
+          </div>
+        </div>
         <button
           @click="pillarPanelOpen = true"
           class="p-1.5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
@@ -224,16 +248,6 @@
           {{ filterBlocked === true ? 'Blocked' : filterBlocked === false ? 'Not Blocked' : 'Blocked' }}
         </button>
 
-        <!-- Hide Closed -->
-        <button
-          type="button"
-          @click="hideClosed = !hideClosed; saveFilters()"
-          class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors"
-          :class="hideClosed ? 'bg-gray-700 dark:bg-gray-200 border-gray-700 dark:border-gray-200 text-white dark:text-gray-800' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-500'"
-        >
-          Hide Closed
-        </button>
-
         <!-- Docs Required -->
         <div class="inline-flex items-center rounded-full border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 overflow-hidden">
           <button
@@ -243,7 +257,19 @@
             @click="toggleFilter('filterDocs', dv)"
             class="px-2.5 py-1 text-[11px] font-medium transition-colors"
             :class="filterDocs.includes(dv) ? 'bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'"
-          >{{ dv === 'Not set' ? 'Docs ?' : 'Docs ' + dv }}</button>
+          >{{ dv === 'Not set' ? 'Docs Required ?' : 'Docs Required ' + dv }}</button>
+        </div>
+
+        <!-- TV/FV Align -->
+        <div class="inline-flex items-center rounded-full border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 overflow-hidden">
+          <button
+            v-for="cat in alignmentChipKeys"
+            :key="cat"
+            type="button"
+            @click="toggleAlignmentDisplayKey(cat)"
+            class="px-2.5 py-1 text-[11px] font-medium transition-colors"
+            :class="displayKeySelected(cat, filterAlignment) ? alignmentCategoryChipClass(cat) : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'"
+          >{{ alignmentCategoryLabel(cat) }}</button>
         </div>
 
         <!-- Delivery Owner -->
@@ -291,73 +317,125 @@
     </div>
 
     <!--
-      Summary cards are display-only KPIs. Click-to-filter was removed because
-      toggling Requested/Committed via tiles made independent Requested (TV in
-      scope) and Committed (FV in scope + TV match/early delivery) counts appear
-      correlated. Use REQ/COM (and other) filter chips in the bar above to filter
-      the table.
+      Summary cards are display-only KPIs except Align category clicks, which
+      filter the table. Requested/Committed stay independent of REQ/COM chips.
+      Delivered is Closed/Done/Resolved with Fix Version in the selected
+      releases — not planning load.
     -->
-    <div v-if="groups.length > 0 && !loadingData" class="grid grid-cols-2 sm:grid-cols-6 gap-3">
-      <div class="relative overflow-hidden bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3.5">
-        <div class="absolute top-0 left-0 w-1 h-full bg-blue-500 rounded-l-xl" />
-        <div class="flex items-center gap-2 mb-1.5">
-          <span class="inline-flex items-center justify-center w-5 h-5 rounded bg-blue-100 dark:bg-blue-900/40">
-            <svg class="w-3 h-3 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
-          </span>
-          <span class="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Requested</span>
+    <div v-if="hasFetched && !loadingData" class="space-y-3">
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div class="relative overflow-hidden bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3.5">
+          <div class="absolute top-0 left-0 w-1 h-full bg-blue-500 rounded-l-xl" />
+          <div class="flex items-center gap-2 mb-1.5">
+            <span class="inline-flex items-center justify-center w-5 h-5 rounded bg-blue-100 dark:bg-blue-900/40">
+              <svg class="w-3 h-3 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+            </span>
+            <span class="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Requested</span>
+          </div>
+          <div class="text-2xl font-bold text-blue-600 dark:text-blue-400 ml-7">{{ totalRequested }}</div>
         </div>
-        <div class="text-2xl font-bold text-blue-600 dark:text-blue-400 ml-7">{{ totalRequested }}</div>
-      </div>
-      <div class="relative overflow-hidden bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3.5">
-        <div class="absolute top-0 left-0 w-1 h-full bg-emerald-500 rounded-l-xl" />
-        <div class="flex items-center gap-2 mb-1.5">
-          <span class="inline-flex items-center justify-center w-5 h-5 rounded bg-emerald-100 dark:bg-emerald-900/40">
-            <svg class="w-3 h-3 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-          </span>
-          <span class="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Committed</span>
+        <div class="relative overflow-hidden bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3.5">
+          <div class="absolute top-0 left-0 w-1 h-full bg-emerald-500 rounded-l-xl" />
+          <div class="flex items-center gap-2 mb-1.5">
+            <span class="inline-flex items-center justify-center w-5 h-5 rounded bg-emerald-100 dark:bg-emerald-900/40">
+              <svg class="w-3 h-3 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            </span>
+            <span class="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Committed</span>
+          </div>
+          <div class="text-2xl font-bold text-emerald-600 dark:text-emerald-400 ml-7">{{ totalCommitted }}</div>
         </div>
-        <div class="text-2xl font-bold text-emerald-600 dark:text-emerald-400 ml-7">{{ totalCommitted }}</div>
-      </div>
-      <div class="relative overflow-hidden bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3.5">
-        <div class="absolute top-0 left-0 w-1 h-full bg-red-500 rounded-l-xl" />
-        <div class="flex items-center gap-2 mb-1.5">
-          <span class="inline-flex items-center justify-center w-5 h-5 rounded bg-red-100 dark:bg-red-900/40">
-            <svg class="w-3 h-3 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
-          </span>
-          <span class="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Blocked</span>
+        <div class="relative overflow-hidden bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3.5">
+          <div class="absolute top-0 left-0 w-1 h-full bg-slate-500 rounded-l-xl" />
+          <div class="flex items-center gap-2 mb-1.5">
+            <span class="inline-flex items-center justify-center w-5 h-5 rounded bg-slate-100 dark:bg-slate-700">
+              <svg class="w-3 h-3 text-slate-600 dark:text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+            </span>
+            <span class="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Delivered</span>
+          </div>
+          <div
+            class="text-2xl font-bold ml-7 text-slate-700 dark:text-slate-200"
+            :title="deliveredTitle"
+          >{{ deliveredDisplay }}</div>
+          <p v-if="deliveredTimedOut" class="ml-7 text-[10px] text-amber-600 dark:text-amber-400">Timed out — open load is unchanged</p>
         </div>
-        <div class="text-2xl font-bold ml-7" :class="totalBlocked > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-gray-100'">{{ totalBlocked }}<span v-if="blockedPercent !== null" class="text-sm font-normal text-gray-400 dark:text-gray-500 ml-1">({{ blockedPercent }}%)</span></div>
-      </div>
-      <div class="relative overflow-hidden bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3.5">
-        <div class="absolute top-0 left-0 w-1 h-full bg-amber-500 rounded-l-xl" />
-        <div class="flex items-center gap-2 mb-1.5">
-          <span class="inline-flex items-center justify-center w-5 h-5 rounded bg-amber-100 dark:bg-amber-900/40">
-            <svg class="w-3 h-3 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-          </span>
-          <span class="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Not Aligned</span>
+        <div class="relative overflow-hidden bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3.5">
+          <div class="absolute top-0 left-0 w-1 h-full bg-red-500 rounded-l-xl" />
+          <div class="flex items-center gap-2 mb-1.5">
+            <span class="inline-flex items-center justify-center w-5 h-5 rounded bg-red-100 dark:bg-red-900/40">
+              <svg class="w-3 h-3 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+            </span>
+            <span class="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Blocked</span>
+          </div>
+          <div class="text-2xl font-bold ml-7" :class="totalBlocked > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-gray-100'">{{ totalBlocked }}<span v-if="blockedPercent !== null" class="text-sm font-normal text-gray-400 dark:text-gray-500 ml-1">({{ blockedPercent }}%)</span></div>
         </div>
-        <div class="text-2xl font-bold ml-7" :class="totalNotAligned > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-gray-100'" title="PM/DO Aligned = No (TV and FV missing or mismatch)">{{ totalNotAligned }}</div>
       </div>
-      <div class="relative overflow-hidden bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3.5">
-        <div class="absolute top-0 left-0 w-1 h-full bg-violet-500 rounded-l-xl" />
-        <div class="flex items-center gap-2 mb-1.5">
-          <span class="inline-flex items-center justify-center w-5 h-5 rounded bg-violet-100 dark:bg-violet-900/40">
-            <svg class="w-3 h-3 text-violet-600 dark:text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-          </span>
-          <span class="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Avg Features Delivered</span>
+
+      <div class="flex items-center gap-2">
+        <span class="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">TV/FV Align</span>
+        <AlignmentLegendPopover variant="button" />
+      </div>
+      <div class="grid grid-cols-2 sm:grid-cols-6 gap-2">
+        <template v-for="cat in alignmentChipKeys" :key="cat">
+          <button
+            v-if="cat !== 'after_requested'"
+            type="button"
+            class="px-3 py-2 rounded-xl border text-left transition-colors"
+            :class="isDisplayFilterActive(cat)
+              ? 'border-primary-400 ring-1 ring-primary-400 bg-white dark:bg-gray-800'
+              : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600'"
+            :title="'Filter the table to ' + alignmentCategoryLabel(cat) + '. Requested and Committed tiles stay unfiltered.'"
+            @click="setAlignmentDisplayFilter(cat)"
+          >
+            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold" :class="alignmentCategoryChipClass(cat)">{{ alignmentCategoryLabel(cat) }}</span>
+            <div class="mt-1 text-lg font-bold tabular-nums text-gray-900 dark:text-gray-100">{{ alignmentCounts[cat] }}</div>
+          </button>
+          <div
+            v-else
+            class="px-3 py-2 rounded-xl border text-left transition-colors"
+            :class="isDisplayFilterActive('after_requested')
+              ? 'border-primary-400 ring-1 ring-primary-400 bg-white dark:bg-gray-800'
+              : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600'"
+            role="button"
+            tabindex="0"
+            title="Fix Version later than Target Version. Yellow until the committed freeze, then green. Click the tile for both; click a number for that color only."
+            @click="setAlignmentDisplayFilter('after_requested')"
+            @keydown.enter.prevent="setAlignmentDisplayFilter('after_requested')"
+          >
+            <span class="inline-flex items-center gap-1">
+              <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold" :class="alignmentCategoryChipClass('after_requested')">After requested</span>
+              <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold" :class="alignmentCategoryChipClass('aligned_late')">After requested</span>
+            </span>
+            <div class="mt-1 flex items-baseline gap-3">
+              <span
+                class="text-lg font-bold tabular-nums text-amber-700 dark:text-amber-400 cursor-pointer"
+                title="Before committed freeze"
+                @click.stop="setAlignmentFilterExact('after_requested')"
+              >{{ afterRequestedCounts.yellow }}</span>
+              <span
+                class="text-lg font-bold tabular-nums text-emerald-700 dark:text-emerald-400 cursor-pointer"
+                title="After committed freeze"
+                @click.stop="setAlignmentFilterExact('aligned_late')"
+              >{{ afterRequestedCounts.green }}</span>
+            </div>
+          </div>
+        </template>
+        <div class="px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+          <span class="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Align %</span>
+          <div
+            class="mt-1 text-lg font-bold tabular-nums"
+            :class="alignmentPctClass"
+            title="(Early or as requested + green After requested) / unique keys with Target Version or Fix Version. Follows selected releases that are still before freeze. Yellow After requested does not count as aligned."
+          >{{ alignmentCounts.alignment_pct }}%</div>
         </div>
-        <div class="text-2xl font-bold text-violet-600 dark:text-violet-400 ml-7">{{ velocity ? velocity.avgPerRelease : '—' }}<span v-if="velocity && velocity.hasPartialYear" class="text-sm font-normal text-gray-400 dark:text-gray-500 ml-0.5" title="Includes components with less than a year of data">*</span></div>
       </div>
-      <div class="relative overflow-hidden bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3.5">
-        <div class="absolute top-0 left-0 w-1 h-full bg-gray-400 rounded-l-xl" />
-        <div class="flex items-center gap-2 mb-1.5">
-          <span class="inline-flex items-center justify-center w-5 h-5 rounded bg-gray-100 dark:bg-gray-700">
-            <svg class="w-3 h-3 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" /></svg>
-          </span>
-          <span class="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Releases</span>
-        </div>
-        <div class="text-2xl font-bold text-gray-900 dark:text-gray-100 ml-7">{{ selectedVersions.length }}</div>
-      </div>
+
+      <AlignmentRollupTable
+        :rollup="alignmentRollup"
+        @select-scope="onSelectScope"
+        @select-milestone="onSelectMilestone"
+        @select-product="onSelectProduct"
+        @select-category="setAlignmentFilterExact"
+      />
     </div>
 
     <!-- Loading -->
@@ -390,9 +468,9 @@
       ref="tableRef"
       :groups="clientFilteredGroups"
       :componentLeads="componentLeads"
-      :velocity="velocity"
       :initialSort="savedSort"
       @sort-changed="onSortChanged"
+      @select="selectedFeature = $event"
     />
 
     <!-- Pillar config panel -->
@@ -402,15 +480,56 @@
       @close="pillarPanelOpen = false"
       @saved="onPillarConfigSaved"
     />
+
+    <FeatureReadinessDrawer
+      :feature="drawerFeature"
+      :jiraBaseUrl="jiraBaseUrl"
+      @close="selectedFeature = null"
+      @navigate="navigateToFeature"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, inject } from 'vue'
 import { getApiBase } from '@shared/client/services/api'
 import { buildComponentLeadsMap } from '../../composables/componentLeads'
 import ComponentReleaseLoadTable from '../components/ComponentReleaseLoadTable.vue'
+import AlignmentRollupTable from '../components/AlignmentRollupTable.vue'
+import AlignmentLegendPopover from '../components/AlignmentLegendPopover.vue'
 import PillarConfigPanel from '../components/PillarConfigPanel.vue'
+import FeatureReadinessDrawer from '../components/FeatureReadinessDrawer.vue'
+import { toDrawerFeature } from '../utils/feature-readiness-drawer-model.js'
+import {
+  ALIGNMENT_DISPLAY_KEYS,
+  alignmentCategoryLabel,
+  alignmentCategoryChipClass,
+  categoriesForDisplayKey,
+  displayKeySelected,
+  toggleDisplayKeyInSelection,
+  categorySetsEqual
+} from '../utils/tv-fv-alignment-display.js'
+import {
+  countAlignment,
+  countAlignmentForGroups,
+  buildAlignmentRollup,
+  countDeliveredInVisibleVersions,
+  visibleVersionNames,
+  afterRequestedSplit
+} from '../utils/alignment-rollup.js'
+import {
+  exportComponentLoadCsv,
+  exportComponentLoadMarkdown
+} from '../utils/component-load-export.js'
+
+const nav = inject('moduleNav', null)
+const jiraBaseUrl = 'https://issues.redhat.com/browse'
+
+function navigateToFeature(key) {
+  if (nav && typeof nav.navigateTo === 'function') {
+    nav.navigateTo('feature-detail', { key, from: 'plan-pm-hub' })
+  }
+}
 
 const API_BASE = '/modules/releases/pm-hub'
 var STORAGE_KEY = 'pm-hub-filters'
@@ -444,18 +563,26 @@ var componentError = ref(null)
 
 var groups = ref([])
 var loadingData = ref(false)
+var activeLoadController = null
 var dataError = ref(null)
 var hasFetched = ref(false)
 var tableRef = ref(null)
 var fetchedAt = ref(null)
 var autoRefreshTimer = ref(null)
+var selectedFeature = ref(null)
+var deliveredIssues = ref([])
+var deliveredSkipped = ref(null)
+var deliveredTimedOut = ref(false)
+var drawerFeature = computed(function() {
+  return toDrawerFeature(selectedFeature.value)
+})
 
 var filterProduct = ref([])
 var filterType = ref([])
 var filterReleaseType = ref([])
 var filterStatus = ref([])
 var filterBlocked = ref(null)
-var hideClosed = ref(false)
+var filterAlignment = ref([])
 var filterDelOwner = ref([])
 var filterPmOwner = ref([])
 var filterDocs = ref([])
@@ -473,6 +600,57 @@ var pmOwnerSearch = ref('')
 
 var savedSort = ref({ column: null, direction: 'asc' })
 
+var exportDropdownOpen = ref(false)
+var exportDropdownRef = ref(null)
+
+function toggleExportMenu() { exportDropdownOpen.value = !exportDropdownOpen.value }
+function closeExportMenu() { exportDropdownOpen.value = false }
+
+function buildComponentToPillarMap() {
+  var map = {}
+  var pillars = pillarConfig.value.pillars || []
+  for (var pi = 0; pi < pillars.length; pi++) {
+    var pillar = pillars[pi]
+    var comps = pillar.components || []
+    for (var ci = 0; ci < comps.length; ci++) {
+      var name = typeof comps[ci] === 'string' ? comps[ci] : (comps[ci] && comps[ci].name) || ''
+      if (!name) continue
+      if (map[name]) {
+        map[name] += '; ' + pillar.name
+      } else {
+        map[name] = pillar.name
+      }
+    }
+  }
+  return map
+}
+
+function getExportArgs() {
+  return {
+    groups: clientFilteredGroups.value,
+    rollup: alignmentRollup.value,
+    summary: {
+      requested: totalRequested.value,
+      committed: totalCommitted.value,
+      delivered: deliveredDisplay.value,
+      blocked: totalBlocked.value + (blockedPercent.value != null ? ' (' + blockedPercent.value + '%)' : '')
+    },
+    componentToPillar: buildComponentToPillarMap()
+  }
+}
+
+function handleExportCsv() {
+  closeExportMenu()
+  var args = getExportArgs()
+  exportComponentLoadCsv(args.groups, args.rollup, args.summary, args.componentToPillar)
+}
+
+function handleExportMarkdown() {
+  closeExportMenu()
+  var args = getExportArgs()
+  exportComponentLoadMarkdown(args.groups, args.rollup, args.summary, args.componentToPillar)
+}
+
 var availableProducts = ['RHOAI', 'RHELAI', 'RHAII']
 
 // ═══ FILTER PERSISTENCE ═══
@@ -488,7 +666,7 @@ function saveFilters() {
       releaseType: filterReleaseType.value,
       status: filterStatus.value,
       blocked: filterBlocked.value,
-      hideClosed: hideClosed.value,
+      alignment: filterAlignment.value,
       delOwner: filterDelOwner.value,
       pmOwner: filterPmOwner.value,
       docs: filterDocs.value,
@@ -511,7 +689,7 @@ function restoreFilters() {
     if (state.releaseType && Array.isArray(state.releaseType)) filterReleaseType.value = state.releaseType
     if (state.status && Array.isArray(state.status)) filterStatus.value = state.status
     if (state.blocked !== undefined) filterBlocked.value = state.blocked
-    if (state.hideClosed !== undefined) hideClosed.value = !!state.hideClosed
+    if (state.alignment && Array.isArray(state.alignment)) filterAlignment.value = state.alignment
     if (state.delOwner && Array.isArray(state.delOwner)) filterDelOwner.value = state.delOwner
     if (state.pmOwner && Array.isArray(state.pmOwner)) filterPmOwner.value = state.pmOwner
     if (state.docs && Array.isArray(state.docs)) filterDocs.value = state.docs
@@ -537,6 +715,7 @@ var filterRefs = {
   filterType: filterType,
   filterReleaseType: filterReleaseType,
   filterStatus: filterStatus,
+  filterAlignment: filterAlignment,
   filterDelOwner: filterDelOwner,
   filterPmOwner: filterPmOwner,
   filterDocs: filterDocs
@@ -559,9 +738,8 @@ function toggleInArray(arrRef, value) {
 var activeFilterCount = computed(function() {
   var count = selectedPillars.value.length + selectedComponents.value.length + selectedVersions.value.length
   count += filterProduct.value.length + filterType.value.length + filterReleaseType.value.length
-  count += filterStatus.value.length + filterDelOwner.value.length + filterPmOwner.value.length + filterDocs.value.length
+  count += filterStatus.value.length + filterDelOwner.value.length + filterPmOwner.value.length + filterDocs.value.length + filterAlignment.value.length
   if (filterBlocked.value !== null) count++
-  if (hideClosed.value) count++
   return count
 })
 
@@ -577,7 +755,7 @@ function clearAllFilters() {
   filterReleaseType.value = []
   filterStatus.value = []
   filterBlocked.value = null
-  hideClosed.value = false
+  filterAlignment.value = []
   filterDelOwner.value = []
   filterPmOwner.value = []
   filterDocs.value = []
@@ -663,18 +841,18 @@ var filteredPmOwners = computed(function() {
 
 /**
  * Apply client-side filters to groups.
- * @param {boolean} includeTypeFilter - when true, apply REQ/COM (filterType) for the table.
- *   KPI summary tiles intentionally omit type filter so Requested (TV in scope)
- *   and Committed (FV in scope + TV match/early delivery) remain independent
- *   headline counts.
+ * @param {{ applyType?: boolean, applyAlignment?: boolean }} opts
+ *   KPI / roll-up omit REQ/COM and Align so Requested, Committed, and the
+ *   five Align counts stay independent headline numbers.
  */
-function filterGroups(includeTypeFilter) {
-  var applyType = includeTypeFilter && filterType.value.length > 0
+function filterGroups(opts) {
+  var applyType = !!(opts && opts.applyType) && filterType.value.length > 0
+  var applyAlignment = !!(opts && opts.applyAlignment) && filterAlignment.value.length > 0
   var hasOther = filterProduct.value.length > 0 || filterReleaseType.value.length > 0 ||
-    filterStatus.value.length > 0 || filterBlocked.value !== null || hideClosed.value ||
+    filterStatus.value.length > 0 || filterBlocked.value !== null ||
     filterDelOwner.value.length > 0 || filterPmOwner.value.length > 0 || filterDocs.value.length > 0
 
-  if (!applyType && !hasOther) return groups.value
+  if (!applyType && !applyAlignment && !hasOther) return groups.value
 
   return groups.value.map(function(g) {
     var version = g.version
@@ -715,6 +893,7 @@ function filterGroups(includeTypeFilter) {
           if (filterType.value.indexOf('committed') >= 0 && isCom) matches = true
           if (!matches) return false
         }
+        if (applyAlignment && filterAlignment.value.indexOf(f.alignmentCategory) === -1) return false
         if (filterReleaseType.value.length > 0 && filterReleaseType.value.indexOf(f.releaseType || '') === -1) return false
         if (filterStatus.value.length > 0) {
           var cs = (f.colorStatus || '').toLowerCase()
@@ -726,7 +905,6 @@ function filterGroups(includeTypeFilter) {
         }
         if (filterBlocked.value === true && !f.isBlocked) return false
         if (filterBlocked.value === false && f.isBlocked) return false
-        if (hideClosed.value && f.statusCategory === 'Done') return false
         if (filterDelOwner.value.length > 0 && filterDelOwner.value.indexOf(f.assignee || '') === -1) return false
         if (filterPmOwner.value.length > 0 && filterPmOwner.value.indexOf(f.pmOwner || '') === -1) return false
         if (filterDocs.value.length > 0) {
@@ -756,7 +934,7 @@ function filterGroups(includeTypeFilter) {
         requestedCount: newReq.length,
         committedCount: newCom.length,
         blockedCount: filtered.filter(function(ff) { return ff.isBlocked }).length,
-        notAlignedCount: filtered.filter(function(ff) { return !ff.pmDoAligned }).length
+        alignmentCounts: countAlignment(filtered)
       })
     }).filter(function(comp) {
       return (comp.requestedFeatures.length + comp.committedFeatures.length) > 0
@@ -766,14 +944,14 @@ function filterGroups(includeTypeFilter) {
   }).filter(function(g) { return g.components.length > 0 })
 }
 
-/** Table/groups view — includes REQ/COM type chips. */
+/** Table — includes REQ/COM and Align category chips. */
 var clientFilteredGroups = computed(function() {
-  return filterGroups(true)
+  return filterGroups({ applyType: true, applyAlignment: true })
 })
 
-/** KPI tiles — ignore filterType so Requested and Committed stay independent. */
+/** KPI tiles and Align roll-up — ignore REQ/COM and Align filters. */
 var summaryFilteredGroups = computed(function() {
-  return filterGroups(false)
+  return filterGroups({ applyType: false, applyAlignment: false })
 })
 
 var HIDDEN_COMPONENTS = ['lllm-d']
@@ -956,29 +1134,87 @@ var blockedPercent = computed(function() {
   return Math.round((totalBlocked.value / total) * 100)
 })
 
-var totalNotAligned = computed(function() {
-  var source = summaryFilteredGroups.value
-  var seen = {}
-  var count = 0
-  for (var gi = 0; gi < source.length; gi++) {
-    var comps = source[gi].components || []
-    for (var ci = 0; ci < comps.length; ci++) {
-      var lists = [comps[ci].requestedFeatures || [], comps[ci].committedFeatures || []]
-      for (var li = 0; li < lists.length; li++) {
-        for (var fi = 0; fi < lists[li].length; fi++) {
-          var f = lists[li][fi]
-          if (!seen[f.key] && !f.pmDoAligned) {
-            seen[f.key] = true
-            count++
-          }
-        }
-      }
-    }
-  }
-  return count
+var alignmentChipKeys = ALIGNMENT_DISPLAY_KEYS
+
+var alignmentCounts = computed(function() {
+  return countAlignmentForGroups(summaryFilteredGroups.value)
 })
 
-var velocity = ref(null)
+var afterRequestedCounts = computed(function() {
+  return afterRequestedSplit(alignmentCounts.value)
+})
+
+var alignmentRollup = computed(function() {
+  return buildAlignmentRollup(summaryFilteredGroups.value)
+})
+
+var alignmentPctClass = computed(function() {
+  var pct = alignmentCounts.value.alignment_pct
+  if (pct < 50) return 'text-red-600 dark:text-red-400'
+  if (pct < 75) return 'text-amber-600 dark:text-amber-400'
+  return 'text-emerald-600 dark:text-emerald-400'
+})
+
+var deliveredCount = computed(function() {
+  if (deliveredSkipped.value === 'no-versions' || deliveredTimedOut.value) return null
+  return countDeliveredInVisibleVersions(
+    deliveredIssues.value,
+    visibleVersionNames(summaryFilteredGroups.value)
+  )
+})
+
+var deliveredDisplay = computed(function() {
+  if (deliveredCount.value == null) return '—'
+  return String(deliveredCount.value)
+})
+
+var deliveredTitle = computed(function() {
+  if (deliveredSkipped.value === 'no-versions') {
+    return 'Select a release to see Closed/Done/Resolved issues with Fix Version in that version. This is not planning load.'
+  }
+  if (deliveredTimedOut.value) {
+    return 'Delivered query timed out. Open Requested/Committed/Align numbers are unchanged.'
+  }
+  return 'Closed, Done, or Resolved with Fix Version in the versions still visible after filters. Not included in Requested, Committed, or Align %.'
+})
+
+function toggleAlignmentDisplayKey(displayKey) {
+  filterAlignment.value = toggleDisplayKeyInSelection(displayKey, filterAlignment.value)
+}
+
+function isDisplayFilterActive(displayKey) {
+  return categorySetsEqual(filterAlignment.value, categoriesForDisplayKey(displayKey))
+}
+
+function setAlignmentDisplayFilter(displayKey) {
+  var cats = categoriesForDisplayKey(displayKey)
+  if (categorySetsEqual(filterAlignment.value, cats)) {
+    filterAlignment.value = []
+    return
+  }
+  filterAlignment.value = cats.slice()
+}
+
+function setAlignmentFilterExact(category) {
+  if (filterAlignment.value.length === 1 && filterAlignment.value[0] === category) {
+    filterAlignment.value = []
+    return
+  }
+  filterAlignment.value = [category]
+}
+
+function onSelectScope() {
+  filterProduct.value = []
+  filterAlignment.value = []
+}
+
+function onSelectMilestone() {
+  filterProduct.value = []
+}
+
+function onSelectProduct(row) {
+  if (row && row.product) filterProduct.value = [row.product]
+}
 
 var formattedFetchedAt = computed(function() {
   if (!fetchedAt.value) return null
@@ -1042,6 +1278,7 @@ function handleClickOutside(e) {
   if (releaseTypeDropdownRef.value && !releaseTypeDropdownRef.value.contains(e.target)) { releaseTypeDropdownOpen.value = false }
   if (delOwnerDropdownRef.value && !delOwnerDropdownRef.value.contains(e.target)) { delOwnerDropdownOpen.value = false; delOwnerSearch.value = '' }
   if (pmOwnerDropdownRef.value && !pmOwnerDropdownRef.value.contains(e.target)) { pmOwnerDropdownOpen.value = false; pmOwnerSearch.value = '' }
+  if (exportDropdownRef.value && !exportDropdownRef.value.contains(e.target)) { exportDropdownOpen.value = false }
 }
 
 function handleExpandAll() { if (tableRef.value) tableRef.value.expandAll() }
@@ -1098,15 +1335,21 @@ function startAutoRefresh() {
   autoRefreshTimer.value = setInterval(function() {
     if (!hasFetched.value || loadingData.value) return
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
-    loadData()
+    loadData({ silent: true })
   }, AUTO_REFRESH_MS)
 }
 
-async function loadData() {
+async function loadData(opts) {
+  var silent = opts && opts.silent
   var effectiveComponents = getEffectiveComponents()
   if (effectiveComponents.length === 0 && selectedVersions.value.length === 0) return
-  loadingData.value = true
-  dataError.value = null
+
+  if (activeLoadController) activeLoadController.abort()
+  var controller = new AbortController()
+  activeLoadController = controller
+
+  if (!silent) loadingData.value = true
+  if (!silent) dataError.value = null
   hasFetched.value = true
 
   try {
@@ -1116,23 +1359,39 @@ async function loadData() {
       var jiraVersions = resolveJiraVersions(selectedVersions.value)
       params.set('versions', jiraVersions.join(','))
     }
-    var response = await fetch(getApiBase() + API_BASE + '/component-release-load?' + params.toString())
+    var response = await fetch(getApiBase() + API_BASE + '/component-release-load?' + params.toString(), { signal: controller.signal })
     if (!response.ok) {
       var errData = await response.json().catch(function() { return {} })
+      if (response.status === 504) {
+        throw new Error(
+          'Request timed out (HTTP 504). Narrow the Release or Pillar filter and retry — ' +
+          'loading several releases with Pillar=All hits Jira too hard for the gateway limit.'
+        )
+      }
       throw new Error(errData.error || 'HTTP ' + response.status)
     }
     var data = await response.json()
     groups.value = data.groups || []
-    velocity.value = data.velocity || null
     fetchedAt.value = data.fetchedAt || null
+    var delivered = data.delivered || {}
+    deliveredIssues.value = delivered.issues || []
+    deliveredSkipped.value = delivered.skipped || null
+    deliveredTimedOut.value = !!delivered.timedOut
   } catch (err) {
-    dataError.value = err.message
-    groups.value = []
-    velocity.value = null
-    fetchedAt.value = null
+    if (err.name === 'AbortError') return
+    if (!silent) dataError.value = err.message
+    if (!silent) {
+      groups.value = []
+      fetchedAt.value = null
+      deliveredIssues.value = []
+      deliveredSkipped.value = null
+      deliveredTimedOut.value = false
+    }
   } finally {
-    loadingData.value = false
-    if (hasFetched.value && !autoRefreshTimer.value) startAutoRefresh()
+    if (activeLoadController === controller) {
+      if (!silent) loadingData.value = false
+      if (hasFetched.value && !autoRefreshTimer.value) startAutoRefresh()
+    }
   }
 }
 
@@ -1146,8 +1405,12 @@ watch(selectedPillars, function() {
 watch([selectedComponents, selectedVersions, selectedPillars], function() {
   var effectiveComponents = getEffectiveComponents()
   if (effectiveComponents.length === 0 && selectedVersions.value.length === 0) {
+    if (activeLoadController) activeLoadController.abort()
     groups.value = []
     hasFetched.value = false
+    deliveredIssues.value = []
+    deliveredSkipped.value = null
+    deliveredTimedOut.value = false
     return
   }
   loadData()
@@ -1155,20 +1418,26 @@ watch([selectedComponents, selectedVersions, selectedPillars], function() {
 
 // Save filters to localStorage on any filter change
 watch(
-  [selectedPillars, selectedComponents, selectedVersions, filterProduct, filterType, filterReleaseType, filterStatus, filterBlocked, hideClosed, filterDelOwner, filterPmOwner, filterDocs],
+  [selectedPillars, selectedComponents, selectedVersions, filterProduct, filterType, filterReleaseType, filterStatus, filterBlocked, filterAlignment, filterDelOwner, filterPmOwner, filterDocs],
   saveFilters,
   { deep: true }
 )
 
-onMounted(function() {
+onMounted(async function() {
   restoreFilters()
-  fetchPillarConfig()
-  fetchComponents()
+  await Promise.all([fetchPillarConfig(), fetchComponents()])
   document.addEventListener('mousedown', handleClickOutside)
+  if (!hasFetched.value) {
+    var effectiveComponents = getEffectiveComponents()
+    if (effectiveComponents.length > 0 || selectedVersions.value.length > 0) {
+      loadData()
+    }
+  }
 })
 
 onBeforeUnmount(function() {
   document.removeEventListener('mousedown', handleClickOutside)
   stopAutoRefresh()
+  if (activeLoadController) activeLoadController.abort()
 })
 </script>

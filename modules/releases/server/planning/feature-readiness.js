@@ -1,9 +1,10 @@
 var { getConfiguredReleases, loadBigRocks } = require('./config')
 var { loadIndex } = require('./cache-reader')
-var { CLOSED_STATUSES, EARLY_STATUSES } = require('./constants')
+var { EARLY_STATUSES, FEATURES_LIST_HIDDEN_STATUSES } = require('./constants')
 var { deriveHumanReviewStatus: sharedDeriveStatus } = require('../execution/ai-review-fields')
 var { computeFPDoRReadiness, isAiFirstFeature } = require('./fpdor')
 var { computePriorityScores } = require('./health/priority-scorer')
+var { classifyOverall, loadReleaseDatesMap } = require('../tv-fv-delta/alignment')
 
 var BLOCKING_HYGIENE_RULES = []
 
@@ -43,7 +44,7 @@ function computeReadiness(feature) {
   var pastRefinement = !!feature.status && EARLY_STATUSES.indexOf(feature.status) === -1
   var noBlockingViolations = !hasBlockingViolations(feature.violations)
 
-  // N/A (pass === null) does not fail readiness; only explicit fails block ready.
+  // N/A items (state not-applicable) count as pass; only explicit fails block ready.
   var isReady = !!fpdor.allApplicablePassed
 
   var gates = {
@@ -81,7 +82,7 @@ function computeConfidence(isReady, fixVersion) {
   return 'ready'
 }
 
-function collectFilterMeta(feature, allComponents, allPriorities, allBigRocks, allTargetVersions, allFixVersions, allTeams) {
+function collectFilterMeta(feature, allComponents, allPriorities, allBigRocks, allTargetVersions, allFixVersions, allTeams, allProjects) {
   if (Array.isArray(feature.components)) {
     for (var i = 0; i < feature.components.length; i++) {
       allComponents.push(feature.components[i])
@@ -99,6 +100,24 @@ function collectFilterMeta(feature, allComponents, allPriorities, allBigRocks, a
   }
   if (feature.fixVersion) allFixVersions.add(feature.fixVersion)
   if (feature.team) allTeams.add(feature.team)
+  if (feature.project && allProjects) allProjects.add(feature.project)
+}
+
+function isHiddenFromFeaturesList(status) {
+  if (!status) return false
+  // Active planning view: hide Closed/Done/Resolved; Cancelled if present from cache/exec.
+  return FEATURES_LIST_HIDDEN_STATUSES.indexOf(status) !== -1 || status === 'Cancelled'
+}
+
+/**
+ * Whether a status belongs in the canonical feature set.
+ * Cancelled is never included. Closed/Done/Resolved only when includeClosed is true
+ * (PM Hub release-load history); Features List uses includeClosed=false.
+ */
+function shouldIncludeInCanonical(status, includeClosed) {
+  if (status === 'Cancelled') return false
+  if (!includeClosed && FEATURES_LIST_HIDDEN_STATUSES.indexOf(status) !== -1) return false
+  return true
 }
 
 function deriveHumanReviewStatusFromLabels(labels) {
@@ -364,6 +383,11 @@ function mergeFeatureData(key, jiraFeatures, aiReviewMap, candidateIndex, health
 
   var pmOwner = (health && health.pmOwner) || (jira && jira.pmOwner) || (exec && exec.pm) || null
 
+  var project = (jira && jira.project) || null
+  if (!project && key && key.indexOf('-') !== -1) {
+    project = key.split('-')[0]
+  }
+
   var team = teamIndex.get(key) || (jira && jira.team) || (exec && exec.team) || null
 
   var tier
@@ -427,7 +451,29 @@ function mergeFeatureData(key, jiraFeatures, aiReviewMap, candidateIndex, health
   var hygieneStatus = computeHygieneStatus(violations)
 
   var storyPoints = (health && health.storyPoints) || (candidate && candidate.storyPoints) || (jira && jira.storyPoints) || (exec && exec.storyPoints) || null
-  var epicCount = (health && health.epicCount) || (candidate && candidate.epicCount) || (exec && exec.epicCount) || 0
+  // Prefer any positive epicCount (jira → health → candidate → exec). A placeholder 0
+  // from live Jira or a stale health cache must not override a real exec count.
+  var epicCount = 0
+  var epicSources = [
+    jira && jira.epicCount,
+    health && health.epicCount,
+    candidate && candidate.epicCount,
+    exec && exec.epicCount
+  ]
+  for (var ei = 0; ei < epicSources.length; ei++) {
+    if (epicSources[ei] != null && epicSources[ei] > 0) {
+      epicCount = epicSources[ei]
+      break
+    }
+  }
+  if (epicCount === 0) {
+    for (var ej = 0; ej < epicSources.length; ej++) {
+      if (epicSources[ej] != null) {
+        epicCount = epicSources[ej]
+        break
+      }
+    }
+  }
   var releaseType = (health && health.releaseType) || (candidate && candidate.phase) || (jira && jira.releaseType) || (exec && exec.releaseType) || null
   var assignee = deliveryOwner
   var pm = pmOwner || (health && health.pm) || (candidate && candidate.pm) || (exec && exec.pm) || null
@@ -435,6 +481,19 @@ function mergeFeatureData(key, jiraFeatures, aiReviewMap, candidateIndex, health
   var effort = (jira && jira.effort) || (exec && exec.effort) || null
   var tshirtSize = (health && health.tshirtSize) || (aiReview && aiReview.size) || null
   var descriptionSignals = (jira && jira.descriptionSignals) || (health && health.descriptionSignals) || null
+  var colorStatus = (jira && jira.colorStatus) || (health && health.colorStatus) || (exec && exec.colorStatus) || null
+  var statusSummary = (jira && jira.statusSummary) || (health && health.statusSummary) || (exec && exec.statusSummary) || null
+  var statusCategory = (jira && jira.statusCategory) || null
+  var isBlocked = !!(jira && jira.isBlocked)
+  var blockedBy = (jira && Array.isArray(jira.blockedBy)) ? jira.blockedBy : []
+  var fixVersions
+  if (jira && Array.isArray(jira.fixVersions) && jira.fixVersions.length > 0) {
+    fixVersions = jira.fixVersions.slice()
+  } else if (fixVersion) {
+    fixVersions = [fixVersion]
+  } else {
+    fixVersions = []
+  }
 
   if (!pmOwner && pm) pmOwner = pm
   if (!sourceRfe && exec && exec.linkedRfeKey) sourceRfe = exec.linkedRfeKey
@@ -442,10 +501,12 @@ function mergeFeatureData(key, jiraFeatures, aiReviewMap, candidateIndex, health
 
   return {
     key: key,
+    project: project,
     title: title,
     sourceRfe: sourceRfe,
     priority: priority,
     status: status,
+    statusCategory: statusCategory,
     size: size,
     recommendation: recommendation,
     needsAttention: needsAttention,
@@ -466,6 +527,7 @@ function mergeFeatureData(key, jiraFeatures, aiReviewMap, candidateIndex, health
     rockPriority: rockPriority,
     targetVersions: targetVersions,
     fixVersion: fixVersion,
+    fixVersions: fixVersions,
     labels: labels,
     violations: violations,
     hygieneStatus: hygieneStatus,
@@ -480,29 +542,35 @@ function mergeFeatureData(key, jiraFeatures, aiReviewMap, candidateIndex, health
     effort: effort,
     tshirtSize: tshirtSize,
     descriptionSignals: descriptionSignals,
+    colorStatus: colorStatus,
+    statusSummary: statusSummary,
+    isBlocked: isBlocked,
+    blockedBy: blockedBy,
     phase: releaseType
   }
 }
 
-async function buildFeatureReadiness(readFromStorage, jiraFeatures, listStorageFiles) {
+async function buildCanonicalFeatures(options) {
+  var readFromStorage = options.readFromStorage
+  var jiraFeatures = options.jiraFeatures
+  var listStorageFiles = options.listStorageFiles
+  var includeClosed = !!options.includeClosed
+
   var execData = await loadExecutionData(readFromStorage)
   var cacheData = await loadCacheIndexes(readFromStorage, listStorageFiles)
+  var releaseDates = await loadReleaseDatesMap({ readFromStorage: readFromStorage })
 
   var execMap = new Map()
   for (var emi = 0; emi < execData.execFeatures.length; emi++) {
     if (execData.execFeatures[emi].key) execMap.set(execData.execFeatures[emi].key, execData.execFeatures[emi])
   }
 
-  var canonicalKeys = buildCanonicalKeySet(jiraFeatures, execData.aiReviewMap, execData.execFeatures, cacheData.healthIndex)
-
-  var pendingReview = []
-  var ready = []
-  var allComponents = []
-  var allPriorities = new Set()
-  var allBigRocks = new Set()
-  var allTargetVersions = new Set()
-  var allFixVersions = new Set()
-  var allTeams = new Set()
+  var canonicalKeys = buildCanonicalKeySet(
+    jiraFeatures,
+    execData.aiReviewMap,
+    execData.execFeatures,
+    cacheData.healthIndex
+  )
 
   var bigRockPriorityMap = new Map()
   for (var bvi = 0; bvi < cacheData.configuredVersions.length; bvi++) {
@@ -520,8 +588,17 @@ async function buildFeatureReadiness(readFromStorage, jiraFeatures, listStorageF
 
   var allMerged = []
   canonicalKeys.forEach(function(key) {
-    var merged = mergeFeatureData(key, jiraFeatures, execData.aiReviewMap, cacheData.candidateIndex, cacheData.healthIndex, cacheData.hygieneIndex, cacheData.teamIndex, execMap)
-    if (merged.status && CLOSED_STATUSES.indexOf(merged.status) !== -1) return
+    var merged = mergeFeatureData(
+      key,
+      jiraFeatures,
+      execData.aiReviewMap,
+      cacheData.candidateIndex,
+      cacheData.healthIndex,
+      cacheData.hygieneIndex,
+      cacheData.teamIndex,
+      execMap
+    )
+    if (!shouldIncludeInCanonical(merged.status, includeClosed)) return
     allMerged.push(merged)
   })
 
@@ -530,6 +607,7 @@ async function buildFeatureReadiness(readFromStorage, jiraFeatures, listStorageF
     configuredVersions: cacheData.configuredVersions
   })
 
+  var features = []
   for (var mi = 0; mi < allMerged.length; mi++) {
     var merged = allMerged[mi]
     var scored = batchScores.get(merged.key)
@@ -537,13 +615,19 @@ async function buildFeatureReadiness(readFromStorage, jiraFeatures, listStorageF
     var priorityBreakdown = scored ? scored.breakdown : null
 
     var blockerResult = computeBlockers(merged, merged.dataSource)
-
     var readinessResult = computeReadiness(merged)
     var isReady = readinessResult.isReady
     var confidence = computeConfidence(isReady, merged.fixVersion)
+    var fixVersions = merged.fixVersions || (merged.fixVersion ? [merged.fixVersion] : [])
+    var alignmentCategory = classifyOverall(
+      merged.targetVersions || [],
+      fixVersions,
+      releaseDates
+    )
 
-    var feature = {
+    features.push({
       key: merged.key,
+      project: merged.project,
       title: merged.title,
       sourceRfe: merged.sourceRfe,
       priority: merged.priority,
@@ -568,6 +652,8 @@ async function buildFeatureReadiness(readFromStorage, jiraFeatures, listStorageF
       rockPriority: merged.rockPriority,
       targetVersions: merged.targetVersions,
       fixVersion: merged.fixVersion,
+      fixVersions: fixVersions,
+      alignmentCategory: alignmentCategory,
       priorityScore: effectivePriorityScore,
       priorityScoreBreakdown: priorityBreakdown,
       effectivePriorityScore: effectivePriorityScore,
@@ -576,20 +662,72 @@ async function buildFeatureReadiness(readFromStorage, jiraFeatures, listStorageF
       dataSource: merged.dataSource,
       labels: merged.labels || [],
       isAiFirst: isAiFirstFeature(merged),
+      epicCount: merged.epicCount || 0,
       confidence: confidence,
       readinessGates: readinessResult.gates,
       fpdor: readinessResult.fpdor,
       violations: merged.violations,
-      hygieneStatus: merged.hygieneStatus
-    }
+      hygieneStatus: merged.hygieneStatus,
+      releaseType: merged.releaseType || null,
+      docsRequired: merged.docsRequired || null,
+      colorStatus: merged.colorStatus || null,
+      statusSummary: merged.statusSummary || null,
+      statusCategory: merged.statusCategory || null,
+      isBlocked: !!merged.isBlocked,
+      blockedBy: merged.blockedBy || [],
+      isReady: isReady
+    })
+  }
+
+  return {
+    features: features,
+    execData: execData,
+    cacheData: cacheData,
+    includeClosed: includeClosed
+  }
+}
+
+async function buildFeatureReadiness(readFromStorage, jiraFeatures, listStorageFiles) {
+  var canonical = await buildCanonicalFeatures({
+    readFromStorage: readFromStorage,
+    jiraFeatures: jiraFeatures,
+    listStorageFiles: listStorageFiles,
+    includeClosed: false
+  })
+
+  var pendingReview = []
+  var ready = []
+  var allComponents = []
+  var allPriorities = new Set()
+  var allBigRocks = new Set()
+  var allTargetVersions = new Set()
+  var allFixVersions = new Set()
+  var allTeams = new Set()
+  var allProjects = new Set()
+
+  for (var i = 0; i < canonical.features.length; i++) {
+    var feature = canonical.features[i]
+    // Drop builder-only flag from the Features List payload.
+    var isReady = feature.isReady
+    var listFeature = Object.assign({}, feature)
+    delete listFeature.isReady
 
     if (isReady) {
-      ready.push(feature)
+      ready.push(listFeature)
     } else {
-      pendingReview.push(feature)
+      pendingReview.push(listFeature)
     }
 
-    collectFilterMeta(feature, allComponents, allPriorities, allBigRocks, allTargetVersions, allFixVersions, allTeams)
+    collectFilterMeta(
+      listFeature,
+      allComponents,
+      allPriorities,
+      allBigRocks,
+      allTargetVersions,
+      allFixVersions,
+      allTeams,
+      allProjects
+    )
   }
 
   function sortFeatures(a, b) {
@@ -615,20 +753,36 @@ async function buildFeatureReadiness(readFromStorage, jiraFeatures, listStorageF
     bigRocks: Array.from(allBigRocks).sort(),
     targetVersions: Array.from(allTargetVersions).sort(),
     fixVersions: Array.from(allFixVersions).sort(),
-    teams: Array.from(allTeams).sort()
+    teams: Array.from(allTeams).sort(),
+    projects: Array.from(allProjects).sort()
   }
 
   var meta = {
     total: pendingReview.length + ready.length,
     pendingReviewCount: pendingReview.length,
     readyCount: ready.length,
-    versions: cacheData.configuredVersions,
-    lastSyncedAt: execData.lastSyncedAt || null,
+    versions: canonical.cacheData.configuredVersions,
+    lastSyncedAt: canonical.execData.lastSyncedAt || null,
     jiraAvailable: jiraFeatures != null
   }
 
   return { pendingReview: pendingReview, ready: ready, filterMeta: filterMeta, meta: meta }
 }
 
-module.exports = { buildFeatureReadiness: buildFeatureReadiness, computeBlockers: computeBlockers, computeReadiness: computeReadiness, hasBlockingViolations: hasBlockingViolations, computeHygieneStatus: computeHygieneStatus, computeConfidence: computeConfidence, collectFilterMeta: collectFilterMeta, deriveHumanReviewStatusFromLabels: deriveHumanReviewStatusFromLabels, buildCanonicalKeySet: buildCanonicalKeySet, mergeFeatureData: mergeFeatureData, BLOCKING_HYGIENE_RULES: BLOCKING_HYGIENE_RULES }
+module.exports = {
+  buildFeatureReadiness: buildFeatureReadiness,
+  buildCanonicalFeatures: buildCanonicalFeatures,
+  computeBlockers: computeBlockers,
+  computeReadiness: computeReadiness,
+  hasBlockingViolations: hasBlockingViolations,
+  computeHygieneStatus: computeHygieneStatus,
+  computeConfidence: computeConfidence,
+  collectFilterMeta: collectFilterMeta,
+  isHiddenFromFeaturesList: isHiddenFromFeaturesList,
+  shouldIncludeInCanonical: shouldIncludeInCanonical,
+  deriveHumanReviewStatusFromLabels: deriveHumanReviewStatusFromLabels,
+  buildCanonicalKeySet: buildCanonicalKeySet,
+  mergeFeatureData: mergeFeatureData,
+  BLOCKING_HYGIENE_RULES: BLOCKING_HYGIENE_RULES
+}
 

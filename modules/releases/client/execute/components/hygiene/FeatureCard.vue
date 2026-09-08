@@ -22,6 +22,18 @@ const colorLabel = computed(() => {
   return props.feature.colorStatus || 'Not Selected'
 })
 
+const completionPct = computed(() => {
+  const pct = props.feature.completionPct
+  return typeof pct === 'number' ? pct : null
+})
+
+const progressBarClass = computed(() => {
+  const pct = completionPct.value || 0
+  if (pct >= 70) return 'bg-green-500'
+  if (pct >= 40) return 'bg-yellow-500'
+  return 'bg-red-500'
+})
+
 // Violation tooltip
 const showTooltip = ref(false)
 const tooltipStyle = ref({})
@@ -64,6 +76,7 @@ function closeTooltip() {
 
 <template>
   <div
+    data-testid="hygiene-feature-card"
     class="bg-white dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700 p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
     @click="$emit('click')"
   >
@@ -107,11 +120,37 @@ function closeTooltip() {
       {{ feature.summary }}
     </p>
 
-    <!-- Issue type badge -->
-    <div v-if="feature.issueType" class="mb-2">
-      <span class="inline-block px-1.5 py-0.5 text-[10px] font-medium rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
+    <!-- Issue type + scope-change chips -->
+    <div
+      v-if="feature.issueType || feature.scopeChange === 'added' || feature.scopeChange === 'dropped'"
+      class="mb-2 flex flex-wrap items-center gap-1"
+    >
+      <span
+        v-if="feature.issueType"
+        class="inline-block px-1.5 py-0.5 text-[10px] font-medium rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400"
+      >
         {{ feature.issueType }}
       </span>
+      <span
+        v-if="feature.scopeChange === 'added'"
+        class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 dark:bg-blue-800/50 text-blue-700 dark:text-blue-300"
+      >Late</span>
+      <span
+        v-if="feature.scopeChange === 'dropped'"
+        class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-800/50 text-amber-700 dark:text-amber-300"
+      >Dropped</span>
+    </div>
+
+    <!-- Progress -->
+    <div v-if="completionPct !== null" class="mb-2 flex items-center gap-2">
+      <div class="flex-1 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+        <div
+          class="h-full rounded-full"
+          :class="progressBarClass"
+          :style="{ width: completionPct + '%' }"
+        />
+      </div>
+      <span class="text-[10px] font-semibold text-gray-500 dark:text-gray-400 w-8 text-right">{{ completionPct }}%</span>
     </div>
 
     <!-- Detail rows -->
@@ -134,7 +173,7 @@ function closeTooltip() {
         <span class="text-gray-700 dark:text-gray-300 truncate">{{ feature.team || '—' }}</span>
       </div>
       <div v-if="feature.fixVersions && feature.fixVersions.length" class="flex gap-1">
-        <span class="text-gray-400 dark:text-gray-500 w-16 shrink-0">Target:</span>
+        <span class="text-gray-400 dark:text-gray-500 w-16 shrink-0">Fix:</span>
         <span class="text-gray-700 dark:text-gray-300 truncate font-mono text-[10px]">{{ feature.fixVersions.join(', ') }}</span>
       </div>
       <div class="flex gap-1">

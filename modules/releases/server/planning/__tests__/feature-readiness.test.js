@@ -3,11 +3,14 @@ import { describe, it, expect } from 'vitest'
 const {
   computeReadiness,
   buildFeatureReadiness,
+  buildCanonicalFeatures,
   computeBlockers,
   hasBlockingViolations,
   computeHygieneStatus,
   computeConfidence,
   collectFilterMeta,
+  isHiddenFromFeaturesList,
+  shouldIncludeInCanonical,
   buildCanonicalKeySet,
   mergeFeatureData
 } = require('../feature-readiness')
@@ -386,7 +389,7 @@ describe('buildFeatureReadiness', function() {
       var result = await buildFeatureReadiness(readFromStorage)
       expect(result.pendingReview).toEqual([])
       expect(result.ready).toEqual([])
-      expect(result.filterMeta).toEqual({ components: [], priorities: [], bigRocks: [], targetVersions: [], fixVersions: [], teams: [] })
+      expect(result.filterMeta).toEqual({ components: [], priorities: [], bigRocks: [], targetVersions: [], fixVersions: [], teams: [], projects: [] })
       expect(result.meta).toEqual({ total: 0, pendingReviewCount: 0, readyCount: 0, versions: [], lastSyncedAt: null, jiraAvailable: false })
     })
 
@@ -1408,7 +1411,8 @@ describe('buildFeatureReadiness', function() {
       var engItem = result.fpdor.items.find(function(i) { return i.name === 'Cross-team deps' })
       expect(engItem.pass).toBe(true)
       expect(docsItem.pass).toBe(false)
-      expect(uxdItem.pass).toBeNull()
+      expect(uxdItem.pass).toBe(true)
+      expect(uxdItem.state).toBe('not-applicable')
     })
 
     it('cross-team deps fails with single eng component and no dependency signal', function() {
@@ -1515,7 +1519,7 @@ describe('buildFeatureReadiness', function() {
     it('humanVerified is not set on mandatory field items when sign-off label present', function() {
       var result = computeReadiness(readyFeature({ labels: ['strat-creator-auto-created', 'strat-creator-human-sign-off'] }))
       var items = result.fpdor.items
-      var riceItem = items.find(function(i) { return i.name === 'RICE (4 dims)' })
+      var riceItem = items.find(function(i) { return i.name === 'RICE' })
       var engItem = items.find(function(i) { return i.name === 'Cross-team deps' })
       var docsItem = items.find(function(i) { return i.name === 'Docs impact' })
       var tvItem = items.find(function(i) { return i.name === 'Target Version' })
@@ -1535,7 +1539,8 @@ describe('buildFeatureReadiness', function() {
     it('feature human sign-off is N/A for Legacy features', function() {
       var result = computeReadiness(readyFeature({ labels: [] }))
       var signOff = result.fpdor.items.find(function(i) { return i.name === 'Feature human sign-off' })
-      expect(signOff.pass).toBeNull()
+      expect(signOff.pass).toBe(true)
+      expect(signOff.state).toBe('not-applicable')
     })
 
     it('feature human sign-off passes via strat-creator-human* for AI First', function() {
@@ -1611,21 +1616,82 @@ describe('buildFeatureReadiness', function() {
       expect(docsItem.pass).toBe(false)
     })
 
-    it('docs impact passes via rp-qg1-pass without fields', function() {
+    it('docs impact ignores unverified rp-qg1-pass without fields', function() {
       var result = computeReadiness(readyFeature({
         components: ['Platform', 'Serving', 'UXD'],
         docsRequired: null,
         labels: ['rp-qg1-pass']
       }))
       var docsItem = result.fpdor.items.find(function(i) { return i.name === 'Docs impact' })
+      expect(docsItem.pass).toBe(false)
+    })
+
+    it('docs impact passes via bot-verified rp-qg1-pass without fields', function() {
+      var result = computeReadiness(readyFeature({
+        components: ['Platform', 'Serving', 'UXD'],
+        docsRequired: null,
+        labels: ['rp-qg1-pass'],
+        qg1PassVerified: true
+      }))
+      var docsItem = result.fpdor.items.find(function(i) { return i.name === 'Docs impact' })
       expect(docsItem.pass).toBe(true)
       expect(docsItem.detail).toContain('rp-qg1-pass')
     })
 
-    it('UXD is not-checked without UXD component or N/A note', function() {
+    it('mandatory shortcuts ignore hand-applied rp-qg1-pass', function() {
+      var result = computeReadiness(readyFeature({
+        targetVersions: [],
+        releaseType: null,
+        priority: null,
+        riceScore: null,
+        docsRequired: null,
+        labels: ['rp-qg1-pass']
+      }))
+      expect(result.isReady).toBe(false)
+      expect(result.fpdor.items.find(function(i) { return i.name === 'Target Version' }).pass).toBe(false)
+      expect(result.fpdor.items.find(function(i) { return i.name === 'RICE' }).pass).toBe(false)
+    })
+
+    it('mandatory shortcuts accept bot-verified rp-qg1-pass', function() {
+      var result = computeReadiness(readyFeature({
+        targetVersions: [],
+        releaseType: null,
+        priority: null,
+        riceScore: null,
+        docsRequired: null,
+        labels: ['rp-qg1-pass'],
+        qg1PassVerified: true
+      }))
+      expect(result.fpdor.items.find(function(i) { return i.name === 'Target Version' }).pass).toBe(true)
+      expect(result.fpdor.items.find(function(i) { return i.name === 'Release Type' }).pass).toBe(true)
+      expect(result.fpdor.items.find(function(i) { return i.name === 'Priority' }).pass).toBe(true)
+      expect(result.fpdor.items.find(function(i) { return i.name === 'RICE' }).pass).toBe(true)
+      expect(result.fpdor.items.find(function(i) { return i.name === 'Docs impact' }).pass).toBe(true)
+    })
+
+    it('AI First sign-off ignores unverified rp-qg1-pass', function() {
+      var result = computeReadiness(readyFeature({
+        labels: ['strat-creator-auto-created', 'rp-qg1-pass']
+      }))
+      var signOff = result.fpdor.items.find(function(i) { return i.name === 'Feature human sign-off' })
+      expect(signOff.pass).toBe(false)
+    })
+
+    it('AI First sign-off passes via bot-verified rp-qg1-pass', function() {
+      var result = computeReadiness(readyFeature({
+        labels: ['strat-creator-auto-created', 'rp-qg1-pass'],
+        qg1PassVerified: true
+      }))
+      var signOff = result.fpdor.items.find(function(i) { return i.name === 'Feature human sign-off' })
+      expect(signOff.pass).toBe(true)
+      expect(signOff.detail).toContain('rp-qg1-pass')
+    })
+
+    it('UXD is N/A without UXD component or N/A note', function() {
       var result = computeReadiness(readyFeature({ components: ['Platform', 'Serving', 'Documentation'], docsRequired: 'Yes' }))
       var uxdItem = result.fpdor.items.find(function(i) { return i.name === 'UXD' })
-      expect(uxdItem.pass).toBeNull()
+      expect(uxdItem.pass).toBe(true)
+      expect(uxdItem.state).toBe('not-applicable')
     })
 
     it('UXD passes with UXD component', function() {
@@ -1717,7 +1783,7 @@ describe('buildFeatureReadiness', function() {
       expect(acItem.detail).toContain('Success Criteria')
     })
 
-    it('architectural alignment is not-checked without signals', function() {
+    it('architectural alignment is N/A without signals', function() {
       var result = computeReadiness(readyFeature({
         scores: {},
         labels: [],
@@ -1734,7 +1800,8 @@ describe('buildFeatureReadiness', function() {
         }
       }))
       var archItem = result.fpdor.items.find(function(i) { return i.name === 'Architectural alignment' })
-      expect(archItem.pass).toBeNull()
+      expect(archItem.pass).toBe(true)
+      expect(archItem.state).toBe('not-applicable')
     })
 
     it('architectural alignment passes when architecture not required', function() {
@@ -1761,6 +1828,7 @@ describe('buildFeatureReadiness', function() {
     it('FPDoR has 17 items total', function() {
       var result = computeReadiness(readyFeature())
       expect(result.fpdor.totalCount).toBe(17)
+      expect(result.fpdor.applicableCount).toBe(17)
       expect(result.fpdor.items).toHaveLength(17)
     })
   })
@@ -2094,6 +2162,52 @@ describe('buildFeatureReadiness', function() {
 
       expect(allBigRocks.size).toBe(0)
     })
+
+    it('collects project into allProjects when provided', function() {
+      var allProjects = new Set()
+      collectFilterMeta(
+        { project: 'RHAIENG', bigRock: '', priority: null, components: [], targetVersions: [], fixVersion: '', team: '' },
+        [], new Set(), new Set(), new Set(), new Set(), new Set(), allProjects
+      )
+      expect(allProjects.has('RHAIENG')).toBe(true)
+    })
+  })
+
+  describe('isHiddenFromFeaturesList', function() {
+    it('hides Closed, Done, Resolved, and Cancelled', function() {
+      expect(isHiddenFromFeaturesList('Closed')).toBe(true)
+      expect(isHiddenFromFeaturesList('Done')).toBe(true)
+      expect(isHiddenFromFeaturesList('Resolved')).toBe(true)
+      expect(isHiddenFromFeaturesList('Cancelled')).toBe(true)
+    })
+
+    it('keeps active planning statuses', function() {
+      expect(isHiddenFromFeaturesList('In Progress')).toBe(false)
+      expect(isHiddenFromFeaturesList('New')).toBe(false)
+      expect(isHiddenFromFeaturesList('Refinement')).toBe(false)
+      expect(isHiddenFromFeaturesList(null)).toBe(false)
+    })
+  })
+
+  describe('shouldIncludeInCanonical', function() {
+    it('never includes Cancelled', function() {
+      expect(shouldIncludeInCanonical('Cancelled', false)).toBe(false)
+      expect(shouldIncludeInCanonical('Cancelled', true)).toBe(false)
+    })
+
+    it('excludes Closed/Done/Resolved when includeClosed is false', function() {
+      expect(shouldIncludeInCanonical('Closed', false)).toBe(false)
+      expect(shouldIncludeInCanonical('Done', false)).toBe(false)
+      expect(shouldIncludeInCanonical('Resolved', false)).toBe(false)
+      expect(shouldIncludeInCanonical('In Progress', false)).toBe(true)
+    })
+
+    it('keeps Closed/Done/Resolved when includeClosed is true', function() {
+      expect(shouldIncludeInCanonical('Closed', true)).toBe(true)
+      expect(shouldIncludeInCanonical('Done', true)).toBe(true)
+      expect(shouldIncludeInCanonical('Resolved', true)).toBe(true)
+      expect(shouldIncludeInCanonical('In Progress', true)).toBe(true)
+    })
   })
 
 })
@@ -2416,6 +2530,97 @@ describe('buildFeatureReadiness — pass 3 (jiraFeatures)', function() {
     expect(result.pendingReview[0].key).toBe('RHAISTRAT-900')
     expect(result.pendingReview[0].dataSource).toBe('jira')
     expect(result.pendingReview[0].title).toBe('Jira Feature RHAISTRAT-900')
+  })
+
+  it('prefers explicit jira epicCount for Child epics over stale exec count of 0', async function() {
+    var jiraFeatures = makeJiraMap([
+      makeJiraFeature('RHAISTRAT-2198', {
+        epicCount: 2,
+        components: ['Platform', 'Serving', 'UXD', 'Documentation'],
+        docsRequired: 'Yes',
+        labels: ['strat-creator-auto-created', 'strat-creator-human-sign-off', 'rp-qg1-pass'],
+        riceScore: 50,
+        releaseType: 'GA',
+        pmOwner: 'Jane'
+      })
+    ])
+    var readFromStorage = makeReadFromStorage({
+      ...convertToUnifiedFormat(makeFeaturesStore({
+        'RHAISTRAT-2198': {
+          key: 'RHAISTRAT-2198',
+          summary: 'Validated Models',
+          status: 'In Progress',
+          epicCount: 0
+        }
+      })),
+      'releases/planning/config.json': CONFIG_3_6,
+      'releases/execution/index.json': makeExecIndex([
+        { key: 'RHAISTRAT-2198', epicCount: 0 }
+      ])
+    })
+
+    var result = await buildFeatureReadiness(readFromStorage, jiraFeatures)
+    var feature = result.pendingReview.concat(result.ready).find(function(f) {
+      return f.key === 'RHAISTRAT-2198'
+    })
+    expect(feature).toBeTruthy()
+    expect(feature.epicCount).toBe(2)
+    var child = feature.fpdor.items.find(function(i) { return i.name === 'Child epics' })
+    expect(child.pass).toBe(true)
+  })
+
+  it('uses exec epicCount when live jira omits epicCount (request path does not discover children)', async function() {
+    var jiraFeature = makeJiraFeature('RHAISTRAT-1473', {
+      components: ['Platform', 'Serving', 'UXD', 'Documentation'],
+      docsRequired: 'Yes',
+      labels: ['strat-creator-auto-created', 'strat-creator-human-sign-off', 'rp-qg1-pass'],
+      riceScore: 50,
+      releaseType: 'GA',
+      pmOwner: 'Jane'
+    })
+    delete jiraFeature.epicCount
+    var jiraFeatures = makeJiraMap([jiraFeature])
+    var readFromStorage = makeReadFromStorage({
+      ...convertToUnifiedFormat(makeFeaturesStore({})),
+      'releases/planning/config.json': CONFIG_3_6,
+      'releases/planning/health-cache-3.6-all.json': {
+        features: [{
+          key: 'RHAISTRAT-1473',
+          deliveryOwner: 'Alice',
+          pmOwner: 'Jane',
+          targetRelease: 'rhoai-3.6',
+          storyPoints: 5,
+          epicCount: 0,
+          releaseType: 'GA',
+          components: ['Platform', 'Serving', 'UXD', 'Documentation'],
+          docsRequired: 'Yes'
+        }]
+      },
+      'releases/execution/index.json': makeExecIndex([
+        {
+          key: 'RHAISTRAT-1473',
+          summary: 'Tool Calling',
+          status: 'Release Pending',
+          epicCount: 5,
+          components: ['Platform', 'Serving', 'UXD', 'Documentation'],
+          docsRequired: 'Yes',
+          labels: ['strat-creator-auto-created', 'strat-creator-human-sign-off', 'rp-qg1-pass'],
+          riceScore: 50,
+          releaseType: 'GA',
+          assignee: 'Alice',
+          pm: 'Jane'
+        }
+      ])
+    })
+
+    var result = await buildFeatureReadiness(readFromStorage, jiraFeatures)
+    var feature = result.pendingReview.concat(result.ready).find(function(f) {
+      return f.key === 'RHAISTRAT-1473'
+    })
+    expect(feature).toBeTruthy()
+    expect(feature.epicCount).toBe(5)
+    var child = feature.fpdor.items.find(function(i) { return i.name === 'Child epics' })
+    expect(child.pass).toBe(true)
   })
 
   it('falls back to execution index when jiraFeatures is null', async function() {
@@ -3420,5 +3625,120 @@ describe('buildFeatureReadiness — single-pass merging', function() {
     expect(allKeys).toContain('RHAISTRAT-AI')
     expect(allKeys).toContain('RHAISTRAT-JIRA')
     expect(allKeys).toContain('RHAISTRAT-HEALTH')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// buildCanonicalFeatures (shared pipeline builder)
+// ---------------------------------------------------------------------------
+
+describe('buildCanonicalFeatures', function() {
+  function makeJiraMap(features) {
+    var map = new Map()
+    for (var i = 0; i < features.length; i++) {
+      map.set(features[i].key, features[i])
+    }
+    return map
+  }
+
+  function makeJiraFeature(key, overrides) {
+    return Object.assign({
+      key: key,
+      project: key.split('-')[0],
+      summary: 'Jira Feature ' + key,
+      status: 'In Progress',
+      issueType: 'Feature',
+      assignee: 'Alice',
+      team: 'Platform',
+      components: ['Dashboard'],
+      labels: [],
+      fixVersions: [],
+      targetVersions: ['rhoai-3.6'],
+      priority: 'Major',
+      riceScore: null
+    }, overrides)
+  }
+
+  it('includes RHAISTRAT and eng-project features with FPDoR fields', async function() {
+    var jiraFeatures = makeJiraMap([
+      makeJiraFeature('RHAISTRAT-100'),
+      makeJiraFeature('RHAIENG-200', { project: 'RHAIENG', summary: 'Eng Initiative' }),
+      makeJiraFeature('RHELAI-300', { project: 'RHELAI' })
+    ])
+    var readFromStorage = makeReadFromStorage({
+      ...convertToUnifiedFormat(makeFeaturesStore({})),
+      'releases/planning/config.json': CONFIG_3_6,
+      'releases/execution/index.json': { features: [], fetchedAt: null, schemaVersion: 'v2', featureCount: 0 }
+    })
+
+    var result = await buildCanonicalFeatures({
+      readFromStorage: readFromStorage,
+      jiraFeatures: jiraFeatures,
+      includeClosed: false
+    })
+
+    var keys = result.features.map(function(f) { return f.key }).sort()
+    expect(keys).toEqual(['RHAIENG-200', 'RHAISTRAT-100', 'RHELAI-300'])
+    result.features.forEach(function(f) {
+      expect(f.fpdor).toBeTruthy()
+      expect(f).toHaveProperty('confidence')
+      expect(f).toHaveProperty('isAiFirst')
+      expect(f).toHaveProperty('isReady')
+      expect(f.project).toBeTruthy()
+    })
+  })
+
+  it('excludes Closed by default but keeps them when includeClosed is true', async function() {
+    var jiraFeatures = makeJiraMap([
+      makeJiraFeature('RHAI-1', { project: 'RHAI', status: 'In Progress' }),
+      makeJiraFeature('RHAI-2', { project: 'RHAI', status: 'Closed' }),
+      makeJiraFeature('RHAI-3', { project: 'RHAI', status: 'Done' }),
+      makeJiraFeature('RHAI-4', { project: 'RHAI', status: 'Cancelled' })
+    ])
+    var readFromStorage = makeReadFromStorage({
+      ...convertToUnifiedFormat(makeFeaturesStore({})),
+      'releases/planning/config.json': CONFIG_3_6,
+      'releases/execution/index.json': { features: [], fetchedAt: null, schemaVersion: 'v2', featureCount: 0 }
+    })
+
+    var openOnly = await buildCanonicalFeatures({
+      readFromStorage: readFromStorage,
+      jiraFeatures: jiraFeatures,
+      includeClosed: false
+    })
+    expect(openOnly.features.map(function(f) { return f.key })).toEqual(['RHAI-1'])
+
+    var withClosed = await buildCanonicalFeatures({
+      readFromStorage: readFromStorage,
+      jiraFeatures: jiraFeatures,
+      includeClosed: true
+    })
+    var withClosedKeys = withClosed.features.map(function(f) { return f.key }).sort()
+    expect(withClosedKeys).toEqual(['RHAI-1', 'RHAI-2', 'RHAI-3'])
+    expect(withClosedKeys).not.toContain('RHAI-4')
+  })
+
+  it('Features List path strips isReady and matches open-only canonical set', async function() {
+    var jiraFeatures = makeJiraMap([
+      makeJiraFeature('INFERENG-9', { project: 'INFERENG' }),
+      makeJiraFeature('INFERENG-10', { project: 'INFERENG', status: 'Resolved' })
+    ])
+    var readFromStorage = makeReadFromStorage({
+      ...convertToUnifiedFormat(makeFeaturesStore({})),
+      'releases/planning/config.json': CONFIG_3_6,
+      'releases/execution/index.json': { features: [], fetchedAt: null, schemaVersion: 'v2', featureCount: 0 }
+    })
+
+    var canonical = await buildCanonicalFeatures({
+      readFromStorage: readFromStorage,
+      jiraFeatures: jiraFeatures,
+      includeClosed: false
+    })
+    var list = await buildFeatureReadiness(readFromStorage, jiraFeatures)
+    var listKeys = list.pendingReview.concat(list.ready).map(function(f) { return f.key })
+
+    expect(canonical.features.map(function(f) { return f.key })).toEqual(['INFERENG-9'])
+    expect(listKeys).toEqual(['INFERENG-9'])
+    expect(list.pendingReview.concat(list.ready)[0].isReady).toBeUndefined()
   })
 })
