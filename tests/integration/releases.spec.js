@@ -207,6 +207,29 @@ test.describe('Releases Views @releases', () => {
   test('should load Schedule view', async ({ page }) => {
     await testView(page, 'schedule', 'Schedule');
   });
+
+  test('should open AIPCC Milestones from the Schedule pill', async ({ page }) => {
+    await page.goto('/#/releases/schedule');
+    await page.waitForLoadState('networkidle');
+
+    await expect(page.getByRole('button', { name: 'AIPCC Milestones' })).toHaveCount(0);
+    const aipccPill = page.getByRole('button', { name: 'AIPCC', exact: true });
+    await expect(aipccPill).toBeVisible();
+    await aipccPill.click();
+
+    await expect(page.getByRole('heading', { name: 'AIPCC Release Milestones' })).toBeVisible();
+    await expect(page.getByText('Upcoming Milestones')).toBeVisible();
+    expect(page.errors).toHaveLength(0);
+  });
+
+  test('should expose AIPCC milestone data from the Releases API', async ({ request }) => {
+    const response = await request.get('/api/modules/releases/aipcc-milestones');
+    expect(response.ok()).toBe(true);
+
+    const body = await response.json();
+    expect(body.releases.length).toBeGreaterThan(0);
+    expect(body.milestoneCount).toBeGreaterThan(0);
+  });
 });
 
 /**
