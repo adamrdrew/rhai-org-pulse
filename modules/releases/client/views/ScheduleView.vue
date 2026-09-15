@@ -63,7 +63,7 @@
             >{{ p }}</button>
             <button
               v-if="selectedProducts.length > 0"
-              @click="selectedProducts = []"
+              @click="clearProducts"
               class="px-3 py-1 rounded-full text-xs font-medium text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
             >Clear</button>
           </template>
@@ -233,7 +233,10 @@ import {
 import ReleaseTimeline from '../components/ReleaseTimeline.vue'
 import { parseReleaseName } from '../composables/useReleaseFamily.js'
 
-const emit = defineEmits(['show-aipcc'])
+const props = defineProps({
+  initialProducts: { type: Array, default: () => [] }
+})
+const emit = defineEmits(['products-change', 'show-aipcc'])
 
 function formatShort(dateStr) {
   return formatShortBase(dateStr, { year: true })
@@ -244,7 +247,7 @@ function formatShort(dateStr) {
 const releases = ref([])
 const loading = ref(true)
 const error = ref(null)
-const selectedProducts = ref([])
+const selectedProducts = ref(props.initialProducts.slice())
 const selectedStream = ref(null)
 const hideReleased = ref(true)
 const selectedVersions = ref([])
@@ -285,7 +288,17 @@ function toggleProduct(p) {
   } else {
     selectedProducts.value = selectedProducts.value.filter(function (x) { return x !== p })
   }
+  emit('products-change', selectedProducts.value)
 }
+
+function clearProducts() {
+  selectedProducts.value = []
+  emit('products-change', [])
+}
+
+watch(() => props.initialProducts, function (products) {
+  selectedProducts.value = products.slice()
+})
 
 function versionHasReleased(v) {
   return releases.value.some(function (r) {
