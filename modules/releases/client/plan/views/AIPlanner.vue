@@ -1,18 +1,36 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, inject, onMounted, onUnmounted } from 'vue'
 import { useDraftPlans } from '../composables/useDraftPlans'
 
-const { session } = useDraftPlans()
+const { session, approveFeature, persist, filterDecision } = useDraftPlans()
 const iframeRef = ref(null)
+const moduleNav = inject('moduleNav', null)
 
-// Pinned to specific commit — update via PR to rhai-org-pulse
-const PLANNER_URL = 'https://htmlpreview.github.io/?https://github.com/yuvalluria/rhai-release-planner/blob/9b91bf6/index.html'
+const PLANNER_URL = 'https://htmlpreview.github.io/?https://github.com/yuvalluria/rhai-release-planner/blob/06f84e5/index.html'
 
 function onIframeLoad() {
   const actor = session.value && session.value.actor
   if (!actor || !iframeRef.value) return
   iframeRef.value.contentWindow.postMessage({ type: 'pm-user', actor }, 'https://htmlpreview.github.io')
 }
+
+function onMessage(e) {
+  if (e.origin !== 'https://htmlpreview.github.io') return
+  if (!e.data || e.data.type !== 'add-to-draft-plan') return
+  if (!Array.isArray(e.data.features)) return
+  const features = e.data.features
+  features.forEach(f => approveFeature(f.key, true))
+  if (features.length > 0) {
+    persist()
+    filterDecision.value = 'approved'
+    if (moduleNav && moduleNav.updateParams) {
+      moduleNav.updateParams({ tab: 'draft-plans' }, { push: false })
+    }
+  }
+}
+
+onMounted(() => window.addEventListener('message', onMessage))
+onUnmounted(() => window.removeEventListener('message', onMessage))
 </script>
 
 <template>
