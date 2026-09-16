@@ -1423,7 +1423,25 @@ test.describe('Releases CVE Sustaining Report @releases', () => {
     expect(page.errors).toHaveLength(0);
   });
 
+  test('component filter uses the Team Tracker component catalog', async ({ page }) => {
+    await page.route('**/api/modules/team-tracker/field-options/component', async route => {
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ values: ['Catalog-only component'] }) });
+    });
+    await page.goto('/#/releases/reports?report=cve-sustaining');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    await page.locator('button', { hasText: 'Manage Filters' }).first().click();
+    await page.locator('button', { hasText: 'Component' }).first().click();
+
+    await expect(page.locator('label', { hasText: 'Catalog-only component' })).toBeVisible();
+    expect(page.errors).toHaveLength(0);
+  });
+
   test('applying a filter updates the report', async ({ page }) => {
+    await page.route('**/api/modules/team-tracker/field-options/component', async route => {
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ values: ['KubeRay'] }) });
+    });
     await page.goto('/#/releases/reports?report=cve-sustaining');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
@@ -1436,8 +1454,8 @@ test.describe('Releases CVE Sustaining Report @releases', () => {
     await page.locator('button', { hasText: 'Component' }).first().click();
     await page.waitForTimeout(300);
 
-    // Select "Model Serving" checkbox
-    var checkbox = page.locator('label').filter({ hasText: 'Model Serving' }).locator('input[type="checkbox"]');
+    // Select a component from the Team Tracker catalog
+    var checkbox = page.locator('label').filter({ hasText: 'KubeRay' }).locator('input[type="checkbox"]');
     await checkbox.click();
     await page.waitForTimeout(300);
 
