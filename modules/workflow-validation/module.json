@@ -1,0 +1,29 @@
+{
+  "name": "Workflow Validation",
+  "slug": "workflow-validation",
+  "description": "CI workflow validation results: test runs, per-workflow history, and HTML reports",
+  "icon": "flask-conical",
+  "order": 22,
+  "defaultEnabled": true,
+  "client": {
+    "entry": "./client/index.js",
+    "navItems": [
+      { "id": "dashboard", "label": "Dashboard", "icon": "LayoutDashboard", "default": true },
+      { "id": "workflow-history", "label": "Workflows", "icon": "History" }
+    ],
+    "hiddenRoutes": {
+      "run-detail": "dashboard"
+    }
+  },
+  "server": {
+    "entry": "./server/index.js"
+  },
+  "export": {
+    "files": [
+      { "path": "workflow-validation/runs/index.json", "notes": "Run index with summary metrics" },
+      { "path": "workflow-validation/runs/*.json", "notes": "Individual run records" },
+      { "path": "workflow-validation/workflows/index.json", "notes": "Workflow summary index" },
+      { "path": "workflow-validation/workflows/*.json", "notes": "Per-workflow history" }
+    ]
+  }
+}

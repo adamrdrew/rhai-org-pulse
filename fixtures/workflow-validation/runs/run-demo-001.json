@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "1.0",
+  "key": "run-demo-001",
+  "timestamp": "2026-06-01T12:50:19Z",
+  "cluster": {
+    "rhoaiVersion": "3.5.0-ea.2",
+    "ocpVersion": "4.17.12"
+  },
+  "summary": {
+    "totalWorkflows": 4,
+    "passed": 1,
+    "failed": 3,
+    "skipped": 0,
+    "passRate": 0.25
+  },
+  "cost": {
+    "performerTotal_usd": 8.41
+  },
+  "rootCauses": [
+    {
+      "category": "PRODUCT_BUG",
+      "errorSummary": "vLLM CPU image digest missing from release manifest",
+      "action": { "type": "EXISTING", "jiraKey": "AIPCC-17429" },
+      "impactedWorkflows": ["llm-serving-agentic-ai", "llm-serving-basic"]
+    },
+    {
+      "category": "ENVIRONMENT",
+      "errorSummary": "GPU node not schedulable during cluster upgrade",
+      "action": { "type": "NEW", "jiraKey": "AIPCC-17555" },
+      "impactedWorkflows": ["gpu-workload-test"]
+    }
+  ],
+  "workflows": [
+    {
+      "name": "llm-serving-agentic-ai",
+      "trendKey": "llm-serving-agentic-ai@3.5",
+      "result": "FAIL",
+      "performer": { "turns": 16, "costUsd": 3.85, "duration_s": 752 }
+    },
+    {
+      "name": "llm-serving-basic",
+      "trendKey": "llm-serving-basic@3.5",
+      "result": "FAIL",
+      "performer": { "turns": 8, "costUsd": 1.22, "duration_s": 340 }
+    },
+    {
+      "name": "gpu-workload-test",
+      "trendKey": "gpu-workload-test@3.5",
+      "result": "FAIL",
+      "performer": { "turns": 12, "costUsd": 2.10, "duration_s": 510 }
+    },
+    {
+      "name": "notebook-spawner",
+      "trendKey": "notebook-spawner@3.5",
+      "result": "PASS",
+      "performer": { "turns": 5, "costUsd": 1.24, "duration_s": 180 }
+    }
+  ]
+}

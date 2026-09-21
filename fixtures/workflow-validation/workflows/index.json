@@ -1,0 +1,34 @@
+[
+  {
+    "name": "gpu-workload-test",
+    "slug": "gpu-workload-test",
+    "latestResult": "PASS",
+    "latestTimestamp": "2026-06-08T09:15:00Z",
+    "passRate": 0.5,
+    "totalRuns": 2
+  },
+  {
+    "name": "llm-serving-agentic-ai",
+    "slug": "llm-serving-agentic-ai",
+    "latestResult": "FAIL",
+    "latestTimestamp": "2026-06-08T09:15:00Z",
+    "passRate": 0.0,
+    "totalRuns": 2
+  },
+  {
+    "name": "llm-serving-basic",
+    "slug": "llm-serving-basic",
+    "latestResult": "PASS",
+    "latestTimestamp": "2026-06-08T09:15:00Z",
+    "passRate": 0.5,
+    "totalRuns": 2
+  },
+  {
+    "name": "notebook-spawner",
+    "slug": "notebook-spawner",
+    "latestResult": "PASS",
+    "latestTimestamp": "2026-06-08T09:15:00Z",
+    "passRate": 1.0,
+    "totalRuns": 2
+  }
+]
