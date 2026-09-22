@@ -232,6 +232,20 @@ table.heatmap td{position:relative}
 <script>
 const $ = id => document.getElementById(id);
 
+// --- API Configuration ---
+// When embedded in org-pulse, use the API endpoint; fallback to static files for standalone
+const API_BASE = '/api/modules/system-health/quality/test-execution/data';
+const USE_API = window.location.pathname.includes('/test-dashboard') || window.parent !== window;
+
+async function fetchData(file) {
+  const url = USE_API 
+    ? `${API_BASE}?file=${file}&_=${Date.now()}`
+    : `data/${file}.json?_=${Date.now()}`;
+  const response = await fetch(url, { credentials: 'include' });
+  if (!response.ok) throw new Error(`Failed to fetch ${file}: ${response.status}`);
+  return response.json();
+}
+
 function formatDate(d){ return d.toISOString().slice(0,10) }
 function friendlyDate(iso){
   const d = new Date(iso+'T00:00:00');
@@ -327,10 +341,9 @@ async function loadHeatmap(){
   content.innerHTML='<div class="loading">Loading…</div>';
   const f=currentFilters();
   try{
-    // Load static JSON (always, so we can re-filter client-side)
+    // Load heatmap data (always, so we can re-filter client-side)
     if(!rawHeatmapData){
-      const r2=await fetch(`data/heatmap.json?_=${Date.now()}`);
-      if(r2.ok) rawHeatmapData=await r2.json();
+      rawHeatmapData = await fetchData('heatmap');
     }
     if(rawHeatmapData) renderAll(filterStatic(rawHeatmapData,f));
     else throw new Error('No data');
@@ -544,7 +557,7 @@ const STATUS_COLORS={'Open':'#ff4757','In Progress':'#ffa502','To Do':'#a29bfe',
 
 let jiraConfig=null;
 async function loadJiraConfig(){
-  try{const r=await fetch(`data/jira_config.json?_=${Date.now()}`);if(r.ok)jiraConfig=await r.json()}catch(_){}
+  try{ jiraConfig = await fetchData('jira_config'); }catch(_){}
 }
 
 function buildJqlUrl(comp,label,ver,rel){

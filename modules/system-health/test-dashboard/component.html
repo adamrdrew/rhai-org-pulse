@@ -186,12 +186,22 @@ if (typeof Chart === 'undefined') {
   document.head.appendChild(script);
 }
 
-// --- Determine correct data base path ---
-function getDataBasePath() {
-  return './data'
+// --- API Configuration ---
+// When embedded in org-pulse, use the API endpoint; fallback to static files for standalone
+const API_BASE = '/api/modules/system-health/quality/test-execution/data';
+const USE_API = window.location.pathname.includes('/test-dashboard') || window.parent !== window;
+
+async function fetchData(file) {
+  const url = USE_API 
+    ? `${API_BASE}?file=${file}&_=${Date.now()}`
+    : `data/${file}.json?_=${Date.now()}`;
+  const response = await fetch(url, { credentials: 'include' });
+  if (!response.ok) throw new Error(`Failed to fetch ${file}: ${response.status}`);
+  return response.json();
 }
 
-const DATA_PATH = getDataBasePath()
+// Legacy path for backward compatibility
+const DATA_PATH = './data';
 
 const $=id=>document.getElementById(id);
 let jiraConfig=null;
@@ -227,7 +237,7 @@ function reloadWithFilters(){
 
 // --- Load Jira config ---
 async function loadJiraConfig(){
-  try{const r=await fetch(`${DATA_PATH}/jira_config.json?_=${Date.now()}`);if(r.ok)jiraConfig=await r.json()}catch(e){console.warn('Failed to load Jira config:',e)}}
+  try{ jiraConfig = await fetchData('jira_config'); }catch(e){console.warn('Failed to load Jira config:',e)}
 }
 
 // --- Jira helpers ---
@@ -360,15 +370,15 @@ async function loadComponent(){
   try{
     let data;const f=currentFilters();f.component=comp;
     // Load full components JSON and heatmap JSON
-    const [r2, r3]=await Promise.all([
-      fetch(`${DATA_PATH}/components.json?_=${Date.now()}`),
-      fetch(`${DATA_PATH}/heatmap.json?_=${Date.now()}`)
+    const [componentsData, heatmapData] = await Promise.all([
+      fetchData('components'),
+      fetchData('heatmap')
     ]);
-    if(r2.ok){const all=await r2.json();if(all[comp])data=filterComponentData(all[comp],f)}
+    if(componentsData && componentsData[comp]) data = filterComponentData(componentsData[comp], f);
     if(!data)throw new Error('No data for "'+comp+'"');
     // Extract this component's by_vr data from heatmap for version chart
     let compHeatmap=null;
-    if(r3.ok){const hm=await r3.json();compHeatmap=(hm.components||[]).find(c=>c.component===comp)}
+    if(heatmapData) compHeatmap = (heatmapData.components||[]).find(c=>c.component===comp);
     render(data,comp,compHeatmap);
   }catch(e){main.innerHTML=`<div class="error">Failed: ${e.message}<br><a href="${backUrl()}">Back</a></div>`}
 }

@@ -580,4 +580,123 @@ module.exports = function registerQualityRoutes(router, context) {
       });
     }
   });
+
+  // ─── Test Execution Dashboard Data API ───
+  // Allows GitLab CI to upload dashboard data directly to org-pulse storage
+
+  /**
+   * @openapi
+   * /api/modules/system-health/quality/test-execution/upload:
+   *   post:
+   *     summary: Upload test execution dashboard data
+   *     description: Accepts heatmap, components, jira_config, and meta JSON data from CI pipeline
+   *     tags: [System Health - Test Execution]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               heatmap: { type: object }
+   *               components: { type: object }
+   *               jira_config: { type: object }
+   *               meta: { type: object }
+   *     responses:
+   *       200:
+   *         description: Data uploaded successfully
+   *       401:
+   *         description: Unauthorized
+   */
+  router.post('/test-execution/upload', requireAuth, requireScope('system-health:write'), jsonLimit, async function(req, res) {
+    if (DEMO_MODE) {
+      return res.json({ status: 'skipped', message: 'Test execution upload disabled in demo mode' });
+    }
+    try {
+      const { heatmap, components, jira_config, meta } = req.body;
+
+      if (!heatmap && !components && !jira_config && !meta) {
+        return res.status(400).json({ error: 'No data provided. Expected heatmap, components, jira_config, or meta.' });
+      }
+
+      const results = {};
+      const basePath = 'system-health/test-execution';
+
+      if (heatmap) {
+        await writeToStorage(`${basePath}/heatmap.json`, heatmap);
+        results.heatmap = 'uploaded';
+      }
+      if (components) {
+        await writeToStorage(`${basePath}/components.json`, components);
+        results.components = 'uploaded';
+      }
+      if (jira_config) {
+        await writeToStorage(`${basePath}/jira_config.json`, jira_config);
+        results.jira_config = 'uploaded';
+      }
+      if (meta) {
+        await writeToStorage(`${basePath}/meta.json`, meta);
+        results.meta = 'uploaded';
+      }
+
+      await writeToStorage(`${basePath}/last-upload.json`, {
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: req.user?.email || 'api',
+        files: Object.keys(results)
+      });
+
+      console.log(`[system-health/quality] Test execution data uploaded: ${Object.keys(results).join(', ')}`);
+      return res.json({ success: true, uploaded: results, timestamp: new Date().toISOString() });
+
+    } catch (error) {
+      console.error('[system-health/quality] Error uploading test execution data:', error.message);
+      return res.status(500).json({ error: 'Failed to upload data' });
+    }
+  });
+
+  /**
+   * @openapi
+   * /api/modules/system-health/quality/test-execution/data:
+   *   get:
+   *     summary: Get test execution dashboard data
+   *     tags: [System Health - Test Execution]
+   *     parameters:
+   *       - name: file
+   *         in: query
+   *         schema: { type: string, enum: [heatmap, components, jira_config, meta] }
+   *     responses:
+   *       200:
+   *         description: Dashboard data
+   */
+  router.get('/test-execution/data', requireAuth, requireScope('system-health:read'), async function(req, res) {
+    try {
+      const { file } = req.query;
+      const basePath = 'system-health/test-execution';
+
+      if (file) {
+        const validFiles = ['heatmap', 'components', 'jira_config', 'meta'];
+        if (!validFiles.includes(file)) {
+          return res.status(400).json({ error: `Invalid file. Valid: ${validFiles.join(', ')}` });
+        }
+        const data = await readFromStorage(`${basePath}/${file}.json`);
+        return res.json(data || {});
+      }
+
+      const [heatmap, components, jira_config, meta, lastUpload] = await Promise.all([
+        readFromStorage(`${basePath}/heatmap.json`),
+        readFromStorage(`${basePath}/components.json`),
+        readFromStorage(`${basePath}/jira_config.json`),
+        readFromStorage(`${basePath}/meta.json`),
+        readFromStorage(`${basePath}/last-upload.json`)
+      ]);
+
+      return res.json({ heatmap: heatmap || {}, components: components || {}, jira_config: jira_config || {}, meta: meta || {}, lastUpload });
+
+    } catch (error) {
+      console.error('[system-health/quality] Error reading test execution data:', error.message);
+      return res.status(500).json({ error: 'Failed to read data' });
+    }
+  });
 };

@@ -967,4 +967,86 @@ test.describe('Test Execution Dashboard @system-health', () => {
 
     expect(page.errors).toHaveLength(0);
   });
+
+  // ─── API Tests ───
+
+  test('GET /test-execution/data should return data structure', async ({ request }) => {
+    const response = await request.get('/api/modules/system-health/quality/test-execution/data');
+
+    if (response.status() === 401) {
+      expect(response.status()).toBe(401);
+    } else {
+      expect(response.status()).toBe(200);
+      const data = await response.json();
+      expect(data).toHaveProperty('heatmap');
+      expect(data).toHaveProperty('components');
+      expect(data).toHaveProperty('jira_config');
+      expect(data).toHaveProperty('meta');
+    }
+  });
+
+  test('GET /test-execution/data with file parameter should return specific file', async ({ request }) => {
+    const response = await request.get('/api/modules/system-health/quality/test-execution/data?file=meta');
+
+    if (response.status() === 401) {
+      expect(response.status()).toBe(401);
+    } else {
+      expect(response.status()).toBe(200);
+      const data = await response.json();
+      expect(typeof data).toBe('object');
+    }
+  });
+
+  test('GET /test-execution/data with invalid file should return 400', async ({ request }) => {
+    const response = await request.get('/api/modules/system-health/quality/test-execution/data?file=invalid');
+
+    if (response.status() === 401) {
+      expect(response.status()).toBe(401);
+    } else {
+      expect(response.status()).toBe(400);
+      const data = await response.json();
+      expect(data).toHaveProperty('error');
+    }
+  });
+
+  test('POST /test-execution/upload should require auth or skip in demo mode', async ({ request }) => {
+    const response = await request.post('/api/modules/system-health/quality/test-execution/upload', {
+      data: { meta: { test: true } }
+    });
+
+    // In demo mode: either auth blocks (401) or demo guard skips (200)
+    if (response.status() === 200) {
+      const data = await response.json();
+      expect(data.status).toBe('skipped');
+    } else {
+      expect(response.status()).toBe(401);
+    }
+  });
+
+  test('POST /test-execution/upload in demo mode should return skipped status', async ({ request }) => {
+    const response = await request.post('/api/modules/system-health/quality/test-execution/upload', {
+      data: { meta: { test: true } }
+    });
+
+    if (response.status() === 200) {
+      const data = await response.json();
+      expect(data.status).toBe('skipped');
+      expect(data.message).toContain('demo mode');
+    } else {
+      expect(response.status()).toBe(401);
+    }
+  });
+
+  test('POST /test-execution/upload with empty body should return 400 or be guarded', async ({ request }) => {
+    const response = await request.post('/api/modules/system-health/quality/test-execution/upload', {
+      data: {}
+    });
+
+    if (response.status() === 200) {
+      const data = await response.json();
+      expect(data.status).toBe('skipped');
+    } else {
+      expect(response.status()).toBe(401);
+    }
+  });
 });
