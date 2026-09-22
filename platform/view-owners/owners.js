@@ -50,6 +50,7 @@ export const viewOwners = {
   'product-builds/overview':                       'Giulia Naponiello',
   'product-builds/package-analysis':               'Einat Pacifici',
   'product-builds/package-request':                'André Lustosa',
+  'product-builds/release-status':                 'Giulia Naponiello',
   'product-builds/rhaiis':                         'Pavol Pitonak',
   'product-builds/rhel-ai':                        'Pavol Pitonak',
   'product-builds/search':                         'Rishabh Kothari',
@@ -138,6 +139,7 @@ export const viewOwners = {
 
   // releases > reports
   'releases/reports/ai-adoption':                  'Saiesh Prabhu',
+  'releases/reports/cve-action-report':            'Doug Hellmann',
   'releases/reports/cve-sustaining':               'Saiesh Prabhu',
   'releases/reports/pre-release-cve':              'Moulali Shikalwadi',
   'releases/reports/release-readiness':            'Arthy Loganathan',
