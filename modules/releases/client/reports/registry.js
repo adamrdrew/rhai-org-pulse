@@ -40,5 +40,13 @@ export const reports = [
     icon: 'Cpu',
     tags: ['Build', 'Architecture', 'Multi-Arch'],
     component: defineAsyncComponent(() => import('./RhoaiComponentArchitecturesReport.vue'))
+  },
+  {
+    id: 'pre-release-cve',
+    label: 'Pre-Release CVE Report',
+    description: 'Pre-release CVE blockers grouped by package and component, sourced from the Google Sheets validation tracker.',
+    icon: 'ShieldCheck',
+    tags: ['Security', 'CVE', 'Pre-Release'],
+    component: defineAsyncComponent(() => import('./PreReleaseCveReport.vue'))
   }
 ]
