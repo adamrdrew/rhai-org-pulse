@@ -42,11 +42,6 @@ export const viewOwners = {
   'okr-hub/reports':                               'Saiesh Prabhu',
   'okr-hub/timeline':                              'Saiesh Prabhu',
 
-  // pm-pipeline
-  'pm-pipeline/learn':                             'Jen Albertson',
-  'pm-pipeline/my-pipeline':                       'Jen Albertson',
-  'pm-pipeline/planning-prep':                     'Jen Albertson',
-
   // product-builds
   'product-builds/artifact-detail':                'Pavol Pitonak',
   'product-builds/base-images':                    'Pavol Pitonak',
@@ -54,7 +49,7 @@ export const viewOwners = {
   'product-builds/drop-detail':                    'Pavol Pitonak',
   'product-builds/overview':                       'Giulia Naponiello',
   'product-builds/package-analysis':               'Einat Pacifici',
-  'product-builds/package-request':                'Andre Lustosa',
+  'product-builds/package-request':                'André Lustosa',
   'product-builds/rhaiis':                         'Pavol Pitonak',
   'product-builds/rhel-ai':                        'Pavol Pitonak',
   'product-builds/search':                         'Rishabh Kothari',
@@ -103,6 +98,9 @@ export const viewOwners = {
   // ── Sub-tab owners (module/view/tab) ──
   // These override the view-level owner when a specific tab is active.
 
+  // releases > deliver
+  'releases/deliver/program-level-release':        'Alex Corvin',
+
   // releases > execute
   'releases/execute/board':                        'Saiesh Prabhu',
   'releases/execute/signals':                      'Alex Corvin',
@@ -131,12 +129,9 @@ export const viewOwners = {
 
   // releases > reports
   'releases/reports/ai-adoption':                  'Saiesh Prabhu',
-  'releases/reports/capacity-commitment':          'Alex Corvin',
   'releases/reports/cve-sustaining':               'Saiesh Prabhu',
-  'releases/reports/feature-pressure':             'Dimitri Saridakis',
   'releases/reports/release-readiness':            'Arthy Loganathan',
   'releases/reports/rhoai-component-architectures': 'Waldemar Znoinski',
-  'releases/reports/tv-fv-delta':                  'Dimitri Saridakis',
 
   // team-tracker > reports
   'team-tracker/reports/team-comparison':          'Alex Corvin',

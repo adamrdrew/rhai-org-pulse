@@ -297,8 +297,8 @@ test.describe('Releases Views @releases', () => {
 /**
  * PM Hub
  *
- * Verify the PM Hub tab loads under Plan, the Component Release Load Tracking
- * report card is visible and clickable, and the PM Hub API endpoints respond.
+ * Verify the PM Hub tab loads under Plan, its report cards are visible and
+ * clickable, and the PM Hub API endpoints respond.
  */
 test.describe('Releases PM Hub @releases', () => {
   test.beforeEach(async ({ page }) => {
@@ -309,7 +309,7 @@ test.describe('Releases PM Hub @releases', () => {
     logCapturedErrors(page, testInfo);
   });
 
-  test('should show PM Hub tab under Plan and load report card', async ({ page }) => {
+  test('should show PM Hub tab under Plan and load report cards', async ({ page }) => {
     await page.goto('/#/releases/plan');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
@@ -322,6 +322,64 @@ test.describe('Releases PM Hub @releases', () => {
 
     const reportCard = page.locator('text=Component Release Load Tracking');
     await expect(reportCard.first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Historic Feature Pressure', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'TV vs FV Delta', exact: true })).toBeVisible();
+
+    expect(page.errors).toHaveLength(0);
+  });
+
+  test('places Historic Feature Pressure next to Component Release Load and removes it from Reports', async ({ page }) => {
+    await page.goto('/#/releases/plan?tab=pm-hub');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    const componentLoadTile = page.getByRole('button', { name: 'Component Release Load Tracking', exact: true });
+    const featurePressureTile = page.getByRole('button', { name: 'Historic Feature Pressure', exact: true });
+    await expect(componentLoadTile).toBeVisible();
+    await expect(featurePressureTile).toBeVisible();
+
+    const adjacentTiles = page.locator(
+      'button[aria-label="Component Release Load Tracking"] + button[aria-label="Historic Feature Pressure"]'
+    );
+    await expect(adjacentTiles).toHaveCount(1);
+
+    const componentLoadBox = await componentLoadTile.boundingBox();
+    const featurePressureBox = await featurePressureTile.boundingBox();
+    expect(Math.abs(componentLoadBox.y - featurePressureBox.y)).toBeLessThan(5);
+    expect(featurePressureBox.x).toBeGreaterThan(componentLoadBox.x);
+
+    await page.goto('/#/releases/reports');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+    await expect(page.getByRole('button', { name: 'Historic Feature Pressure', exact: true })).toHaveCount(0);
+
+    expect(page.errors).toHaveLength(0);
+  });
+
+  test('places TV vs FV Delta next to Historic Feature Pressure and removes it from Reports', async ({ page }) => {
+    await page.goto('/#/releases/plan?tab=pm-hub');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    const featurePressureTile = page.getByRole('button', { name: 'Historic Feature Pressure', exact: true });
+    const tvFvDeltaTile = page.getByRole('button', { name: 'TV vs FV Delta', exact: true });
+    await expect(featurePressureTile).toBeVisible();
+    await expect(tvFvDeltaTile).toBeVisible();
+
+    const adjacentTiles = page.locator(
+      'button[aria-label="Historic Feature Pressure"] + button[aria-label="TV vs FV Delta"]'
+    );
+    await expect(adjacentTiles).toHaveCount(1);
+
+    const featurePressureBox = await featurePressureTile.boundingBox();
+    const tvFvDeltaBox = await tvFvDeltaTile.boundingBox();
+    expect(Math.abs(featurePressureBox.y - tvFvDeltaBox.y)).toBeLessThan(5);
+    expect(tvFvDeltaBox.x).toBeGreaterThan(featurePressureBox.x);
+
+    await page.goto('/#/releases/reports');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+    await expect(page.getByRole('button', { name: 'TV vs FV Delta', exact: true })).toHaveCount(0);
 
     expect(page.errors).toHaveLength(0);
   });
@@ -943,6 +1001,18 @@ test.describe('Releases FPDoR Readiness @releases', () => {
     expect(page.errors).toHaveLength(0);
   });
 
+  test('PM Pipeline is not exposed in the UI or API', async ({ page, request }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    const moduleNav = page.locator('aside nav').getByText('PM Pipeline', { exact: true });
+    await expect(moduleNav).toHaveCount(0);
+
+    const apiResponse = await request.get('/api/modules/pm-pipeline/resources');
+    expect(apiResponse.status()).toBe(404);
+  });
+
   test('Feature List view loads under Plan tab', async ({ page }) => {
     await page.goto('/#/releases/plan?tab=feature-readiness');
     await page.waitForLoadState('networkidle');
@@ -1211,6 +1281,72 @@ test.describe('Releases Release Readiness @releases', () => {
     const res = await request.post('/api/modules/releases/release-readiness/refresh?version=rhoai-3.5.EA2');
     const body = await res.json();
     expect(body).not.toHaveProperty('director_summary');
+  });
+});
+
+/**
+ * Program Level Release Report (Deliver tab)
+ *
+ * Verify the report is directly beside Risk Dashboard, retains its standalone
+ * view, does not inherit Deliver's shared release chip filters, and no longer
+ * appears in the Reports hub.
+ */
+test.describe('Program Level Release Report in Deliver @releases', () => {
+  test.beforeEach(async ({ page }) => {
+    setupErrorTracking(page);
+    await page.route('**/api/modules/releases/execution/features', route => {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ features: [] }) });
+    });
+    await page.route('**/api/modules/team-tracker/field-options/component', route => {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ values: [] }) });
+    });
+    await page.route('**/api/modules/team-tracker/field-options/jiraTeam', route => {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ values: [] }) });
+    });
+    await page.route('**/api/modules/releases/delivery/analysis*', route => {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ releases: [] }) });
+    });
+    await page.route('**/api/modules/releases/delivery/conforma/releases', route => {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ releases: [] }) });
+    });
+  });
+
+  test.afterEach(async ({ page }, testInfo) => {
+    logCapturedErrors(page, testInfo);
+  });
+
+  test('is directly beside Risk Dashboard and opens without shared Deliver filters', async ({ page }) => {
+    await page.goto('/#/releases/deliver');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    const deliverTabs = page.locator('nav[aria-label="Deliver sub-tabs"] > button');
+    await expect(deliverTabs.nth(0)).toHaveText('Risk Dashboard');
+    await expect(deliverTabs.nth(1)).toHaveText('Program Level Release Report');
+
+    await deliverTabs.nth(1).click();
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    await expect(page).toHaveURL(/#\/releases\/deliver\?tab=program-level-release/);
+    await expect(page.getByRole('heading', { name: 'Program Level Release Report', exact: true })).toBeVisible();
+    await expect(page.getByTestId('deliver-release-chip-bar')).toHaveCount(0);
+
+    await page.goto('/#/releases/reports');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+    await expect(page.getByRole('button', { name: 'Program Level Release Report', exact: true })).toHaveCount(0);
+
+    expect(page.errors).toHaveLength(0);
+  });
+
+  test('loads directly from its Deliver tab URL', async ({ page }) => {
+    await page.goto('/#/releases/deliver?tab=program-level-release');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    await expect(page.getByRole('heading', { name: 'Program Level Release Report', exact: true })).toBeVisible();
+    await expect(page.getByTestId('deliver-release-chip-bar')).toHaveCount(0);
+    expect(page.errors).toHaveLength(0);
   });
 });
 
