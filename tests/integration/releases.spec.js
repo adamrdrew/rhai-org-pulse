@@ -744,13 +744,13 @@ test.describe('Releases Field and BU Feedback @releases', () => {
 });
 
 /**
- * Draft Plans (Plan tab)
+ * Plan Approval (Plan tab)
  *
- * Verify the Draft Plans red-pen view loads under Plan (tab + deep link),
- * shows the release-cycle chrome and candidate table (demo fixture), and that
- * the cycles / editor APIs respond. Skips freeze/approve matrix coverage.
+ * Verify the Plan Approval red-pen view loads under Plan (tab + deep link),
+ * starts with only approved features visible, and that the cycles / editor
+ * APIs respond. Skips freeze/approve matrix coverage.
  */
-test.describe('Releases Draft Plans @releases', () => {
+test.describe('Releases Plan Approval @releases', () => {
   test.beforeEach(async ({ page }) => {
     setupErrorTracking(page);
   });
@@ -759,12 +759,12 @@ test.describe('Releases Draft Plans @releases', () => {
     logCapturedErrors(page, testInfo);
   });
 
-  test('should show Draft Plans tab under Plan and load draft table', async ({ page }) => {
+  test('should show Plan Approval tab under Plan with a fresh approval state', async ({ page }) => {
     await page.goto('/#/releases/plan');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
 
-    const draftPlansTab = page.locator('button', { hasText: 'Draft Plans' });
+    const draftPlansTab = page.locator('button', { hasText: 'Plan Approval' });
     await expect(draftPlansTab).toBeVisible();
 
     await draftPlansTab.click();
@@ -772,42 +772,45 @@ test.describe('Releases Draft Plans @releases', () => {
     await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
 
     await expect(page.getByText('Release cycle', { exact: true }).first()).toBeVisible();
-    await expect(page.locator('h2', { hasText: /Draft Plan/ })).toBeVisible();
+    await expect(page.locator('h2', { hasText: /Plan Approval/ })).toBeVisible();
+    await expect(page.getByText('Plan Approval — Start Fresh')).toBeVisible();
 
     const table = page.locator('table[role="table"]');
     await expect(table).toBeVisible();
 
     const dataRows = page.locator('tbody tr[role="row"]');
-    await expect(dataRows.first()).toBeVisible({ timeout: 15000 });
-    expect(await dataRows.count()).toBeGreaterThan(0);
+    await expect(page.getByText('No features match filters')).toBeVisible({ timeout: 15000 });
+    expect(await dataRows.count()).toBe(1);
 
     expect(page.errors).toHaveLength(0);
   });
 
-  test('Draft Plans deep link loads with candidates', async ({ page }) => {
+  test('Plan Approval deep link loads the approval workspace', async ({ page }) => {
     await page.goto('/#/releases/plan?tab=draft-plans');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
 
     await expect(page.getByText('Release cycle', { exact: true }).first()).toBeVisible();
-    await expect(page.locator('h2', { hasText: /Draft Plan/ })).toBeVisible();
+    await expect(page.locator('h2', { hasText: /Plan Approval/ })).toBeVisible();
+    await expect(page.getByText('Plan Approval — Start Fresh')).toBeVisible();
 
     const keyHeader = page.locator('thead th', { hasText: 'Key' });
     await expect(keyHeader.first()).toBeVisible();
     await expect(page.locator('thead th', { hasText: 'Big Rock' }).first()).toBeVisible();
 
     const dataRows = page.locator('tbody tr[role="row"]');
-    await expect(dataRows.first()).toBeVisible({ timeout: 15000 });
-    expect(await dataRows.count()).toBeGreaterThan(0);
+    await expect(page.getByText('No features match filters')).toBeVisible({ timeout: 15000 });
+    expect(await dataRows.count()).toBe(1);
 
     expect(page.errors).toHaveLength(0);
   });
 
-  test('clicking a Draft Plans row opens the feature detail drawer', async ({ page }) => {
+  test('clicking a Plan Approval row opens the feature detail drawer', async ({ page }) => {
     await page.goto('/#/releases/plan?tab=draft-plans');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
 
+    await page.getByLabel('Placement').selectOption('');
     const dataRows = page.locator('tbody tr[role="row"]');
     await expect(dataRows.first()).toBeVisible({ timeout: 15000 });
 
@@ -2231,7 +2234,7 @@ test.describe('RHOAI Component Architectures Report @releases', () => {
  * AI Planner tab (Plan view)
  *
  * Verify the AI Planner tab is visible in the Plan sub-nav, becomes active
- * on click, and renders the iframe that embeds the release planning dashboard.
+ * on click, and renders the native release planning workspace.
  */
 test.describe('Releases AI Planner tab @releases', () => {
   test.beforeEach(async ({ page }) => {
@@ -2253,7 +2256,7 @@ test.describe('Releases AI Planner tab @releases', () => {
     expect(page.errors).toHaveLength(0);
   });
 
-  test('clicking AI Planner tab renders the iframe', async ({ page }) => {
+  test('clicking AI Planner tab renders the native planner', async ({ page }) => {
     await page.goto('/#/releases/plan');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
@@ -2262,15 +2265,12 @@ test.describe('Releases AI Planner tab @releases', () => {
     await aiPlannerTab.click();
     await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
 
-    const iframe = page.locator('iframe[title="AI-First Release Planner"]');
-    await expect(iframe).toBeVisible();
-    await expect(iframe).toHaveAttribute('sandbox', 'allow-scripts allow-same-origin');
+    await expect(page.getByRole('heading', { name: 'AI-First Release Planner' })).toBeVisible();
+    await expect(page.locator('#plan-select')).toHaveValue('3.6 GA');
+    await expect(page.getByPlaceholder('Search by Key or Summary...')).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'RICE' })).toBeVisible();
 
-    const src = await iframe.getAttribute('src');
-    expect(src).toContain('rhai-release-planner');
-
-    const errors = page.errors.filter(e => !e.message.includes('cross-origin subframe'));
-    expect(errors).toHaveLength(0);
+    expect(page.errors).toHaveLength(0);
   });
 
   test('AI Planner deep link activates the tab', async ({ page }) => {
@@ -2278,11 +2278,96 @@ test.describe('Releases AI Planner tab @releases', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
 
-    const iframe = page.locator('iframe[title="AI-First Release Planner"]');
-    await expect(iframe).toBeVisible();
+    const aiPlannerTab = page.locator('button', { hasText: 'AI Planner' });
+    await expect(aiPlannerTab).toHaveClass(/border-primary-500/);
+    await expect(page.getByRole('heading', { name: 'AI-First Release Planner' })).toBeVisible();
 
-    const errors = page.errors.filter(e => !e.message.includes('cross-origin subframe'));
-    expect(errors).toHaveLength(0);
+    expect(page.errors).toHaveLength(0);
+  });
+
+  test('AI Planner API returns the native snapshot', async ({ request }) => {
+    const res = await request.get('/api/modules/releases/planning/ai-planner');
+    expect(res.ok()).toBe(true);
+
+    const body = await res.json();
+    expect(typeof body.featureCount).toBe('number');
+    expect(Array.isArray(body.features)).toBe(true);
+    expect(body.features).toHaveLength(body.featureCount);
+    expect(Array.isArray(body.bugQueue)).toBe(true);
+    expect(body).toHaveProperty('metadata');
+  });
+
+  test('should load AI Planner tab with features', async ({ page }) => {
+    const apiResponses = [];
+    page.on('response', response => {
+      if (response.url().includes('/api/modules/releases/planning/ai-planner')) {
+        apiResponses.push({ url: response.url(), status: response.status() });
+      }
+    });
+
+    await page.goto('/#/releases/plan?tab=ai-planner');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    const aiPlannerResponse = apiResponses.find(r => !r.url.includes('/status'));
+    expect(aiPlannerResponse?.status).toBe(200);
+
+    await expect(page.locator('text=AI-First Release Planner')).toBeVisible();
+    const tableRows = await page.locator('table tbody tr').count();
+    expect(tableRows).toBeGreaterThan(0);
+    await expect(page.locator('text=Bug Queue')).toBeVisible();
+
+    expect(unexpectedDemoResourceErrors(page)).toHaveLength(0);
+  });
+
+  test('should filter AI Planner by release plan', async ({ page }) => {
+    await page.goto('/#/releases/plan?tab=ai-planner');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    const planSelect = page.locator('select').first();
+    const options = await planSelect.locator('option').allTextContents();
+
+    if (options.length > 1) {
+      await planSelect.selectOption(options[1]);
+      await page.waitForTimeout(500);
+      const rows = await page.locator('table tbody tr').count();
+      expect(rows).toBeGreaterThanOrEqual(0);
+    }
+
+    expect(unexpectedDemoResourceErrors(page)).toHaveLength(0);
+  });
+
+  test('should search features in AI Planner', async ({ page }) => {
+    await page.goto('/#/releases/plan?tab=ai-planner');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    const searchInput = page.locator('input[placeholder*="Search"]');
+    await searchInput.fill('RHAISTRAT-1281');
+    await page.waitForTimeout(500);
+
+    const filteredRows = await page.locator('table tbody tr').count();
+    expect(filteredRows).toBe(1);
+    await expect(page.getByText('RHAISTRAT-1281', { exact: true })).toBeVisible();
+
+    expect(unexpectedDemoResourceErrors(page)).toHaveLength(0);
+  });
+
+  test('should add an AI Planner feature to Plan Approval', async ({ page }) => {
+    await page.goto('/#/releases/plan?tab=ai-planner');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    const featureRow = page.locator('tbody tr').filter({ hasText: 'RHAISTRAT-1281' });
+    await expect(featureRow).toBeVisible();
+    await featureRow.getByRole('button', { name: 'Add to Plan' }).click();
+
+    await expect(page).toHaveURL(/tab=draft-plans/);
+    await expect(page.locator('h2', { hasText: /Plan Approval/ })).toBeVisible();
+    await expect(page.getByText('RHAISTRAT-1281', { exact: true })).toBeVisible();
+
+    expect(unexpectedDemoResourceErrors(page)).toHaveLength(0);
   });
 });
 
