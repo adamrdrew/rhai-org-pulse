@@ -5,6 +5,10 @@ test.describe('Workflow Validation module @workflow-validation', () => {
     await page.route('**/api/modules/workflow-validation/**', async (route) => {
       const path = new URL(route.request().url()).pathname
       let body = {}
+      if (path.endsWith('/config')) body = {
+        url: 'https://search.example', httpProxy: '', httpsProxy: '',
+        overrides: {}, sources: { url: 'environment', httpProxy: 'none', httpsProxy: 'none' }
+      }
       if (path.endsWith('/filters')) body = {
         versions: [{ value: '3.6', count: 3 }, { value: '3.5', count: 2 }],
         providers: [], models: [],
@@ -76,6 +80,12 @@ test.describe('Workflow Validation module @workflow-validation', () => {
     await expect(page.getByRole('heading', { name: 'Test Results', exact: true })).toBeVisible()
     expect(requests.some((url) => url.includes('/overview'))).toBe(true)
     expect(requests.every((url) => !url.includes('opensearch-workflow-validation'))).toBe(true)
+  })
+
+  test('does not expose Workflow Validation connection settings to non-admins', async ({ page }) => {
+    await page.goto('/#/settings?tab=workflow-validation')
+    await expect(page.getByRole('heading', { name: 'Workflow Validation connection' })).toHaveCount(0)
+    await expect(page.getByLabel('OpenSearch URL')).toHaveCount(0)
   })
 
   test('toggles hidden costs with iddqd across views', async ({ page }) => {
