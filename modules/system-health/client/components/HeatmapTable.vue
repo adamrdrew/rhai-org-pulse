@@ -52,15 +52,7 @@
                       class="dd-run"
                     >
                       <div class="dd-run-header">
-                        <a 
-                          v-if="vr.jenkins_urls && vr.jenkins_urls[0]"
-                          :href="vr.jenkins_urls[0]"
-                          target="_blank"
-                          class="dd-run-label"
-                        >
-                          {{ vrKey }}
-                        </a>
-                        <span v-else class="dd-run-label">{{ vrKey }}</span>
+                        <span class="dd-run-label">{{ vrKey }}</span>
                         <span class="dd-pct" :class="`cell-pct-${pctColor(passPct(vr.passed, vr.total))}`">
                           {{ passPct(vr.passed, vr.total) }}%
                         </span>
@@ -69,6 +61,17 @@
                         <span class="cp">✓{{ vr.passed || 0 }}</span>
                         <span class="cf">✗{{ vr.failed || 0 }}</span>
                         <span class="cs">⊘{{ vr.skipped || 0 }}</span>
+                      </div>
+                      <div v-if="vr.jenkins_urls && vr.jenkins_urls.length" class="dd-run-links">
+                        <a 
+                          v-for="(url, idx) in vr.jenkins_urls"
+                          :key="idx"
+                          :href="url"
+                          target="_blank"
+                          class="dd-run-link"
+                        >
+                          Run {{ idx + 1 }} ↗
+                        </a>
                       </div>
                     </div>
                   </div>
@@ -338,17 +341,28 @@ table.heatmap th {
 .dd-run-label {
   font-size: 11px;
   color: #5ea7ff;
-  text-decoration: none;
-}
-
-.dd-run-label:hover {
-  text-decoration: underline;
 }
 
 .dd-run-counts {
   font-size: 10px;
   display: flex;
   gap: 6px;
+}
+
+.dd-run-links {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.dd-run-link {
+  font-size: 10px;
+  color: #60a5fa;
+  text-decoration: none;
+}
+
+.dd-run-link:hover {
+  text-decoration: underline;
 }
 
 .dd-pct {
