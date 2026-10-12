@@ -27,8 +27,6 @@
               <div 
                 class="cell"
                 :class="`cell-${pctColor(passPct(comp.days[date].passed, comp.days[date].total))}`"
-                @mouseenter="activeCell = `${comp.component}-${date}`"
-                @mouseleave="activeCell = null"
               >
                 <div class="cell-pct" :class="`cell-pct-${pctColor(passPct(comp.days[date].passed, comp.days[date].total))}`">
                   {{ passPct(comp.days[date].passed, comp.days[date].total) }}%
@@ -37,44 +35,6 @@
                   <span class="cp">{{ comp.days[date].passed }}</span>
                   <span class="cf">{{ comp.days[date].failed }}</span>
                   <span class="cs">{{ comp.days[date].skipped }}</span>
-                </div>
-
-                <!-- Hover dropdown -->
-                <div 
-                  v-if="activeCell === `${comp.component}-${date}`"
-                  :class="['cell-dropdown', { 'dd-below': isTopRow(comp) }]"
-                >
-                  <div class="dd-title">{{ friendlyDate(date) }} · {{ (comp.days[date].jenkins_urls || []).length }} run(s)</div>
-                  <div v-if="comp.days[date].by_vr" class="dd-runs">
-                    <div 
-                      v-for="(vr, vrKey) in comp.days[date].by_vr"
-                      :key="vrKey"
-                      class="dd-run"
-                    >
-                      <div class="dd-run-header">
-                        <span class="dd-run-label">{{ vrKey }}</span>
-                        <span class="dd-pct" :class="`cell-pct-${pctColor(passPct(vr.passed, vr.total))}`">
-                          {{ passPct(vr.passed, vr.total) }}%
-                        </span>
-                      </div>
-                      <div class="dd-run-counts">
-                        <span class="cp">✓{{ vr.passed || 0 }}</span>
-                        <span class="cf">✗{{ vr.failed || 0 }}</span>
-                        <span class="cs">⊘{{ vr.skipped || 0 }}</span>
-                      </div>
-                      <div v-if="vr.jenkins_urls && vr.jenkins_urls.length" class="dd-run-links">
-                        <a 
-                          v-for="(url, idx) in vr.jenkins_urls"
-                          :key="idx"
-                          :href="url"
-                          target="_blank"
-                          class="dd-run-link"
-                        >
-                          Run {{ idx + 1 }} ↗
-                        </a>
-                      </div>
-                    </div>
-                  </div>
                 </div>
               </div>
             </template>
@@ -89,7 +49,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
 
 const props = defineProps({
   components: {
@@ -99,8 +59,6 @@ const props = defineProps({
 })
 
 defineEmits(['component-click'])
-
-const activeCell = ref(null)
 
 const dates = computed(() => {
   const dateSet = new Set()
@@ -127,11 +85,6 @@ function friendlyDate(iso) {
   const d = new Date(iso + 'T00:00:00')
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
   return months[d.getMonth()] + ' ' + d.getDate()
-}
-
-function isTopRow(comp) {
-  // Show dropdown below for first few components to avoid cutoff
-  return props.components.indexOf(comp) < 2
 }
 </script>
 
@@ -206,8 +159,6 @@ table.heatmap th {
   min-width: 60px;
   display: inline-block;
   text-align: center;
-  cursor: pointer;
-  position: relative;
 }
 
 .cell-green {
@@ -276,99 +227,6 @@ table.heatmap th {
 
 .cell-counts .cs {
   color: #ffa502;
-}
-
-/* Hover dropdown */
-.cell:hover .cell-dropdown {
-  display: block;
-}
-
-.cell-dropdown {
-  display: none;
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  background: #132f4c;
-  border: 1px solid #1e4976;
-  border-radius: 8px;
-  padding: 8px 0;
-  z-index: 200;
-  min-width: 340px;
-  max-height: 360px;
-  overflow-y: auto;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-  text-align: left;
-  bottom: calc(100% + 6px);
-}
-
-.cell-dropdown.dd-below {
-  bottom: auto;
-  top: calc(100% + 6px);
-}
-
-.dd-title {
-  padding: 6px 14px 4px;
-  font-size: 10px;
-  color: #6b8299;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 1px solid #1e4976;
-  margin-bottom: 4px;
-}
-
-.dd-runs {
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.dd-run {
-  padding: 5px 14px;
-  border-bottom: 1px solid rgba(30, 73, 118, 0.3);
-}
-
-.dd-run:last-child {
-  border-bottom: none;
-}
-
-.dd-run-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 2px;
-}
-
-.dd-run-label {
-  font-size: 11px;
-  color: #5ea7ff;
-}
-
-.dd-run-counts {
-  font-size: 10px;
-  display: flex;
-  gap: 6px;
-}
-
-.dd-run-links {
-  display: flex;
-  gap: 8px;
-  margin-top: 4px;
-}
-
-.dd-run-link {
-  font-size: 10px;
-  color: #60a5fa;
-  text-decoration: none;
-}
-
-.dd-run-link:hover {
-  text-decoration: underline;
-}
-
-.dd-pct {
-  font-size: 10px;
-  font-weight: 700;
-  margin-left: auto;
 }
 
 .date-header {
