@@ -25,3 +25,6 @@
 /modules/system-health/       @aloganat @AjayJagan
 /modules/upstream-pulse/      @dpanshug
 /modules/workflow-validation/ @accorvin @adamrdrew
+
+# Workflow validation integration test.
+/tests/integration/workflow-validation.spec.js @red-hat-data-services/org-pulse-maintainers @adamrdrew
