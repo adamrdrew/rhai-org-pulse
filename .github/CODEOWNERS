@@ -15,6 +15,9 @@
 /package-lock.json @red-hat-data-services/org-pulse-maintainers
 /*config.*         @red-hat-data-services/org-pulse-maintainers
 
+# Tests can be approved by Adam or the core maintainers.
+/tests/            @red-hat-data-services/org-pulse-maintainers @adamrdrew
+
 # Functional modules.
 /modules/ai-catalyst/         @natifridman
 /modules/ai-impact/           @accorvin
