@@ -260,6 +260,18 @@ module.exports = function registerAIPlannerRoutes(router, context) {
 
       const allFeatures = (readiness.pendingReview || []).concat(readiness.ready || []);
 
+      // Build outcome number mapping from live feature data
+      const outcomeMap = extractOutcomesFromFeatures(allFeatures);
+      const featureToOutcomeNumber = {};
+      PRIORITY_OUTCOMES.forEach((outcomeKey, index) => {
+        const outcome = outcomeMap[outcomeKey];
+        if (outcome && outcome.children) {
+          outcome.children.forEach(childKey => {
+            featureToOutcomeNumber[childKey] = index + 1;
+          });
+        }
+      });
+
       // Map to iframe expectations (index.html lines 2863-2869)
       const features = allFeatures.map(f => ({
         Key: f.key,
@@ -267,7 +279,7 @@ module.exports = function registerAIPlannerRoutes(router, context) {
         Components: f.components || [],
         Team: f.team || '',
         Priority: f.priority || '',
-        Outcome: f.bigRock || '',
+        Outcome: f.parentKey || '', // Outcome KEY (RHAISTRAT-*) for clickable link
         PlannedFor: (f.targetVersions && f.targetVersions[0]) || '',
         Score: f.riceScore || 0,
         // FPDoR is an object {passedCount, totalCount} - convert to string format
@@ -286,7 +298,8 @@ module.exports = function registerAIPlannerRoutes(router, context) {
         // pmOwner is a {displayName} object on the Jira path and a string elsewhere;
         // the planner contract is a string, so flatten before it leaves the API.
         PM: (f.pmOwner && typeof f.pmOwner === 'object' ? f.pmOwner.displayName : f.pmOwner) || '',
-        DeliveryOwner: f.deliveryOwner || ''
+        DeliveryOwner: f.deliveryOwner || '',
+        OutcomeNumber: featureToOutcomeNumber[f.key] || '—'
       }));
 
       // bugQueue comes from CSV upload; for live-only mode, return empty
