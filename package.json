@@ -1,7 +1,7 @@
 {
   "name": "org-pulse-ai-eng",
   "private": true,
-  "version": "1.0.551",
+  "version": "1.0.552",
   "engines": {
     "node": ">=22"
   },
