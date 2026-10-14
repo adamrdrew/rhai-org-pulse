@@ -159,12 +159,12 @@ describe('Workflow Validation OverviewView', () => {
     expect(text).not.toContain('distinct linked issues')
   })
 
-  it('renders every test result with task outcomes and product-bug context', () => {
+  it('renders every test result with product-bug context and hides task outcomes', () => {
     expect(wrapper.text()).toContain('Test Results')
     expect(wrapper.text()).toContain('Fraud Detection Test')
     expect(wrapper.text()).toContain('Origin: gitlab-mr')
-    expect(wrapper.text()).toContain('7 tasks passed')
-    expect(wrapper.text()).toContain('2 tasks failed')
+    expect(wrapper.text()).not.toContain('7 tasks passed')
+    expect(wrapper.text()).not.toContain('2 tasks failed')
     expect(wrapper.text()).not.toContain('Duration')
     expect(wrapper.text()).toContain('RHOAIENG-456 — New product bug opened.')
     expect(wrapper.get('a[href="https://issues.example/RHOAIENG-456"]').text()).toBe('RHOAIENG-456')

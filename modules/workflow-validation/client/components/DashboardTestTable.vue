@@ -6,7 +6,6 @@
           <th class="px-5 py-3 font-semibold"><button @click="setSort('verdict')">Verdict {{ sortMark('verdict') }}</button></th>
           <th class="px-4 py-3 font-semibold"><button @click="setSort('workflow')">Test {{ sortMark('workflow') }}</button></th>
           <th class="px-4 py-3 font-semibold"><button @click="setSort('rhoai_version')">Version {{ sortMark('rhoai_version') }}</button></th>
-          <th class="px-4 py-3 font-semibold"><button @click="setSort('tasks_passed')">Task results {{ sortMark('tasks_passed') }}</button></th>
           <th class="px-4 py-3 font-semibold min-w-72">Product or UX issue</th>
           <th v-if="costsVisible" class="px-4 py-3 font-semibold text-right">AI Cost</th>
           <th class="px-4 py-3 font-semibold"><button @click="setSort('timestamp')">When {{ sortMark('timestamp') }}</button></th>
@@ -25,11 +24,6 @@
             <div v-if="test.telemetry_origin" class="mt-0.5 text-xs font-normal text-gray-400 dark:text-gray-500">Origin: {{ test.telemetry_origin }}</div>
           </td>
           <td class="px-4 py-3 font-mono text-xs text-gray-600 dark:text-gray-300">{{ test.rhoai_version || '—' }}</td>
-          <td class="px-4 py-3 whitespace-nowrap text-xs font-medium">
-            <span class="text-green-700 dark:text-green-400">{{ test.tasks_passed ?? '—' }} tasks passed</span>
-            <span class="mx-1.5 text-gray-300 dark:text-gray-600">·</span>
-            <span class="text-red-700 dark:text-red-400">{{ test.tasks_failed ?? '—' }} tasks failed</span>
-          </td>
           <td class="px-4 py-3 text-xs">
             <ProductBugStatus :findings="test.productBugs" :verdict="test.verdict" />
           </td>
@@ -37,7 +31,7 @@
           <td class="px-4 py-3 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">{{ formatDate(test.timestamp) }}</td>
         </tr>
         <tr v-if="!loading && !tests.length">
-          <td :colspan="costsVisible ? 7 : 6" class="px-5 py-10 text-center text-gray-400 dark:text-gray-500">{{ emptyMessage }}</td>
+          <td :colspan="costsVisible ? 6 : 5" class="px-5 py-10 text-center text-gray-400 dark:text-gray-500">{{ emptyMessage }}</td>
         </tr>
       </tbody>
     </table>

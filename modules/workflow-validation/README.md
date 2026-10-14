@@ -104,6 +104,8 @@ Important rules:
   `rhoai_version`, `telemetry_suite`, and `invocation_id`. Product bugs and UX
   defects from the same execution are separated into newly opened Jira issues
   and known issues encountered without opening another issue.
+- The dashboard table omits task counts; task outcomes remain available in the
+  execution detail and workflow history views.
 - Stakeholder-facing test outcomes distinguish `PASS` from product or UX failures
   (`FAIL`, when a Jira-linked `PRODUCT_BUG` or `UX_DEFECT` finding is linked) and environmental failures
   (`SKIP`, when an unsuccessful test has no product or UX issue finding). Raw task
