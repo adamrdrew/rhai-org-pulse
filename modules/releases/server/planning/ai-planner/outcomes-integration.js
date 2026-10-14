@@ -13,29 +13,40 @@ const OUTCOME_KEY_PATTERN = /^RHAISTRAT-\d+$/;
  * Order matches Jira plan priority. Features' parent fields reference these.
  */
 const PRIORITY_OUTCOMES = [
-  'RHAISTRAT-2046', // 1: AIPCC Security Policy Compliance Directive
-  'RHAISTRAT-2129', // 2: Outcome: RHAIE Platform Stabilization
-  'RHAISTRAT-1513', // 3: MaaS — 3.5 Deliverables
-  'RHAISTRAT-2125', // 4: OCP 5 release and impact on RH AI
-  'RHAISTRAT-1979', // 5: Outcome: Production Resilience
-  'RHAISTRAT-1981', // 6: Outcome: Platform Experience for llm-d
-  'RHAISTRAT-1680', // 7: Parent Outcome: Unified Red Hat AI Inference
-  'RHAISTRAT-1312', // 8: Gen AI Studio
-  'RHAISTRAT-155',  // 9: Secure Agent Onboarding: Security-First Agent Engineering
-  'RHAISTRAT-1357', // 10: Tool Calling
-  'RHAISTRAT-1971', // 11: Tool Calling related
-  'RHAISTRAT-1354', // 12: From Tools to Swarms (MCP)
-  'RHAISTRAT-1355', // 13: MCP related
-  'RHAISTRAT-932',  // 14: MCP Connectivity
-  'RHAISTRAT-1498', // 15: Eval Hub
-  'RHAISTRAT-1339', // 16: AI Hub incl MCP
-  'RHAISTRAT-1066', // 17: Multitenancy
-  'RHAISTRAT-155',  // 18: BYOA — Bring Your Own Agent
-  'RHAISTRAT-2875', // 19: AI Grid MVP
-  'RHAISTRAT-1088', // 20: vLLM Omni
-  'RHAISTRAT-2604', // 21: (exact key)
-  'RHAISTRAT-188'   // 22: AutoRAG
+  { key: 'RHAISTRAT-2046', title: 'AIPCC Security Policy Compliance Directive' },
+  { key: 'RHAISTRAT-2129', title: 'Outcome: RHAIE Platform Stabilization, Quality, and Cohesion' },
+  { key: 'RHAISTRAT-1513', title: 'MaaS — 3.5 Deliverables' },
+  { key: 'RHAISTRAT-2125', title: 'OCP 5 release and impact on RH AI' },
+  { key: 'RHAISTRAT-1979', title: 'Outcome: Production Resilience' },
+  { key: 'RHAISTRAT-1981', title: 'Outcome: Platform Experience for llm-d' },
+  { key: 'RHAISTRAT-1680', title: 'Parent Outcome: Unified Red Hat AI Inference (RHAII) on Any Linux and Any Kubernetes' },
+  { key: 'RHAISTRAT-2875', title: 'AI Grid MVP' },
+  { key: 'RHAISTRAT-155', title: 'Agents run governed in OpenShell on Red Hat AI in production' },
+  { key: 'RHAISTRAT-1357', title: 'Make Red Hat Inference Server the Best for Agents' },
+  { key: 'RHAISTRAT-1855', title: 'End-to-End Observability for RH AI — All Components Emitting Metrics, Traces, and Logs' },
+  { key: 'RHAISTRAT-2016', title: '[TP] AI-Native Observability Operations for RHOAI' },
+  { key: 'RHAISTRAT-1517', title: 'Observability for OpenShift AI — 3.5 Deliverables' },
+  { key: 'RHAISTRAT-1669', title: 'Red Hat AI Factory with NVIDIA: Vera Rubin Day 0 Support' },
+  { key: 'RHAISTRAT-1446', title: 'Delivering GPUaaS and Kueue Experience in OpenShift AI' },
+  { key: 'RHAISTRAT-1312', title: 'Gen AI Studio — Playground, Observability, AI Assets, and Model Specialization' },
+  { key: 'RHAISTRAT-1339', title: 'AI Hub AI Asset Delivery for Agentic Solutions' },
+  { key: 'RHAISTRAT-1498', title: '[Outcome] EvalHub Dashboard UI Experience for 3.5 & 3.6 (EA1, EA2, GA)' },
+  { key: 'RHAISTRAT-898', title: 'Deliver Role Based Access Control for RHOAI components' },
+  { key: 'RHAISTRAT-1471', title: 'Multi-Tenancy in RHOAI' },
+  { key: 'RHAISTRAT-188', title: '[Outcome] Enable AutoRAG for Automated RAG Pattern Discovery and Optimization' },
+  { key: 'RHAISTRAT-1066', title: '[Outcome] Enable AutoML' }
 ];
+
+/**
+ * Build title → key mapping for quick outcome lookup
+ */
+function buildOutcomeTitleMap() {
+  const titleMap = {};
+  PRIORITY_OUTCOMES.forEach(outcome => {
+    titleMap[outcome.title] = outcome.key;
+  });
+  return titleMap;
+}
 
 /**
  * Extract outcomes from live feature data (already from Jira 12h sync).
@@ -46,28 +57,37 @@ const PRIORITY_OUTCOMES = [
  */
 function extractOutcomesFromFeatures(allFeatures) {
   const outcomes = {};
+  const titleMap = buildOutcomeTitleMap();
 
   // Initialize all outcomes (1-22)
-  PRIORITY_OUTCOMES.forEach((outcomeKey, index) => {
-    outcomes[outcomeKey] = {
-      key: outcomeKey,
-      title: '', // Will be populated from features below
+  PRIORITY_OUTCOMES.forEach((outcome, index) => {
+    outcomes[outcome.key] = {
+      key: outcome.key,
+      title: outcome.title,
       outcomeNumber: index + 1,
       children: []
     };
   });
 
   // Scan features for their parent outcome links
-  // Features store parent outcome in: f.parentKey (e.g., "RHAISTRAT-2046")
+  // Features can have parent in two forms:
+  // 1. f.parentKey = "RHAISTRAT-2046" (direct key)
+  // 2. f.parent = "Outcome title" (title from Jira parent field)
   allFeatures.forEach(feature => {
     const featureKey = feature.key;
+    let parentKey = null;
 
-    // Check for direct parent link (Jira parent field)
+    // Try direct parentKey first
     if (feature.parentKey && OUTCOME_KEY_PATTERN.test(feature.parentKey)) {
-      const parentKey = feature.parentKey;
-      if (outcomes[parentKey]) {
-        outcomes[parentKey].children.push(featureKey);
-      }
+      parentKey = feature.parentKey;
+    }
+    // Fall back to title-based lookup (f.parent contains outcome title)
+    else if (feature.parent && titleMap[feature.parent]) {
+      parentKey = titleMap[feature.parent];
+    }
+
+    if (parentKey && outcomes[parentKey]) {
+      outcomes[parentKey].children.push(featureKey);
     }
   });
 

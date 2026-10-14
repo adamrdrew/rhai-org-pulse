@@ -149,7 +149,7 @@ module.exports = function registerAIPlannerRoutes(router, context) {
 
       // Convert to ordered array matching PRIORITY_OUTCOMES order (include all 22, even if empty)
       const outcomes = PRIORITY_OUTCOMES
-        .map(key => outcomeMap[key])
+        .map(o => outcomeMap[o.key])
         .filter(outcome => outcome);
 
       // Calculate metrics (in-plan count, % complete, confidence, status)
@@ -264,12 +264,12 @@ module.exports = function registerAIPlannerRoutes(router, context) {
       const outcomeMap = extractOutcomesFromFeatures(allFeatures);
       const featureToOutcomeNumber = {};
       const featureToOutcomeKey = {};
-      PRIORITY_OUTCOMES.forEach((outcomeKey, index) => {
-        const outcome = outcomeMap[outcomeKey];
+      PRIORITY_OUTCOMES.forEach((o, index) => {
+        const outcome = outcomeMap[o.key];
         if (outcome && outcome.children) {
           outcome.children.forEach(childKey => {
             featureToOutcomeNumber[childKey] = index + 1;
-            featureToOutcomeKey[childKey] = outcomeKey;
+            featureToOutcomeKey[childKey] = o.key;
           });
         }
       });
