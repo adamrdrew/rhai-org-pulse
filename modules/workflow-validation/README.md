@@ -112,8 +112,9 @@ Important rules:
   verdicts remain unchanged.
 - Jira defaults to one exact test-suite run and can switch explicitly to all
   product bugs and UX defects for a RHOAI release, a date range, or all recorded time.
-- Trends defaults to the most recently active test suite across all RHOAI
-  versions. It charts pass rate, test volume, newly opened product or UX issues,
+- Trends defaults to Release Gate when it is available and the URL does not
+  specify a suite. Otherwise it uses the most recently active test suite across
+  all RHOAI versions. It charts pass rate, test volume, newly opened product or UX issues,
   and known issues per invocation, with version rollups and exact-run links
   back to the dashboard. Date and release filters remain shareable in the URL.
 - Compare requires a test-run group and two dated invocations. Each side is one

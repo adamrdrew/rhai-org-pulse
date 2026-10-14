@@ -1,5 +1,23 @@
 const { test, expect } = require('@playwright/test')
 
+async function mockTrendSuites(page) {
+  const rows = [
+    { suite: 'ad-hoc', invocationId: 'ad-hoc-latest', timestamp: '2026-10-02T10:00:00Z', tests: 2, passed: 2, failed: 0, errors: 0, passRate: 1, rhoaiVersion: '3.6', productBugs: [] },
+    { suite: 'release-gate', invocationId: 'release-gate-older', timestamp: '2026-10-01T10:00:00Z', tests: 3, passed: 2, failed: 1, errors: 0, passRate: 2 / 3, rhoaiVersion: '3.6', productBugs: [] },
+  ]
+  await page.route('**/api/modules/workflow-validation/filters', (route) => route.fulfill({
+    json: {
+      versions: [{ value: '3.6', count: 5 }],
+      providers: [], models: [], workflows: [],
+      testSuites: [{ value: 'ad-hoc', count: 2 }, { value: 'release-gate', count: 3 }],
+    },
+  }))
+  await page.route('**/api/modules/workflow-validation/test-suites?**', (route) => {
+    const suite = new URL(route.request().url()).searchParams.get('suite')
+    return route.fulfill({ json: { rows: suite ? rows.filter((row) => row.suite === suite) : rows } })
+  })
+}
+
 test.describe('Workflow Validation module @workflow-validation', () => {
   test.beforeEach(async ({ page }) => {
     await page.route('**/api/modules/workflow-validation/**', async (route) => {
@@ -91,6 +109,34 @@ test.describe('Workflow Validation module @workflow-validation', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
     })
   })
+
+  test('defaults Trends to Release Gate despite a newer Ad Hoc run and allows changing suites', async ({ page }) => {
+    await mockTrendSuites(page)
+    await page.goto('/#/workflow-validation/workflows?datePreset=all')
+
+    const suiteSelect = page.getByRole('combobox', { name: 'Test Suite' })
+    await expect(suiteSelect).toHaveValue('release-gate')
+    await expect(page).toHaveURL(/testRun=release-gate/)
+    await expect(page.getByRole('heading', { name: 'Run History' })).toBeVisible()
+    await expect(page.getByRole('table').locator('tbody tr')).toHaveCount(1)
+
+    await suiteSelect.selectOption('ad-hoc')
+    await expect(suiteSelect).toHaveValue('ad-hoc')
+    await expect(page).toHaveURL(/testRun=ad-hoc/)
+    await expect(page.getByRole('table').locator('tbody tr')).toHaveCount(1)
+  })
+
+  for (const parameter of ['testRun', 'suite']) {
+    test(`preserves an explicit Trends suite in the ${parameter} URL parameter`, async ({ page }) => {
+      await mockTrendSuites(page)
+      await page.goto(`/#/workflow-validation/workflows?datePreset=all&${parameter}=ad-hoc`)
+
+      await expect(page.getByRole('combobox', { name: 'Test Suite' })).toHaveValue('ad-hoc')
+      await expect(page).toHaveURL(/testRun=ad-hoc/)
+      await expect(page.getByRole('heading', { name: 'Run History' })).toBeVisible()
+      await expect(page.getByRole('table').locator('tbody tr')).toHaveCount(1)
+    })
+  }
 
   test('loads the real backend router in the production image', async ({ request }) => {
     const response = await request.get('/api/modules/workflow-validation/status')

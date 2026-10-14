@@ -277,6 +277,10 @@ onMounted(async () => {
       dateTo.value = range.dateTo
     }
     if (!selectedRun.value) {
+      const releaseGate = runOptions.value.find((run) => formatSuiteName(run.value) === 'Release Gate')
+      selectedRun.value = releaseGate?.value || ''
+    }
+    if (!selectedRun.value) {
       const latest = await getTestSuites({
         version: selectedVersion.value,
         dateFrom: dateFrom.value,
