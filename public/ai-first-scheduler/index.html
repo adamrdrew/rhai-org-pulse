@@ -2900,6 +2900,10 @@ window.addEventListener('message', function(e){
       schedule(mapped);
       allData = mapped;
       dataSource = 'live';
+      // Re-apply outcome mappings after postMessage data load to prevent numbers from disappearing
+      if (outcomeData && outcomeData.outcomes && outcomeData.outcomes.length > 0) {
+        mapFeaturesToOutcomes();
+      }
     } catch (err) {
       console.error('AI Planner: could not schedule live data, keeping previous rows', err);
     }
@@ -3906,6 +3910,8 @@ async function fetchOutcomes() {
         populateOutcomeDropdown();
       }
       run();
+    } else {
+      console.warn('Invalid outcomes response:', data);
     }
   } catch (err) {
     console.warn('Failed to fetch outcomes (non-blocking):', err);

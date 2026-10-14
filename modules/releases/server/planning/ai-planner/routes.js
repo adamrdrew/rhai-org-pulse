@@ -147,10 +147,10 @@ module.exports = function registerAIPlannerRoutes(router, context) {
       // Extract outcomes from live feature parent links (100% from Jira, same 12h sync as features)
       const outcomeMap = extractOutcomesFromFeatures(allFeatures);
 
-      // Convert to ordered array matching PRIORITY_OUTCOMES order
+      // Convert to ordered array matching PRIORITY_OUTCOMES order (include all 22, even if empty)
       const outcomes = PRIORITY_OUTCOMES
         .map(key => outcomeMap[key])
-        .filter(outcome => outcome && outcome.children.length > 0);
+        .filter(outcome => outcome);
 
       // Calculate metrics (in-plan count, % complete, confidence, status)
       const outcomesWithMetrics = calculateOutcomeMetrics(outcomes, inPlanFeatures, allFeatures);
@@ -263,11 +263,13 @@ module.exports = function registerAIPlannerRoutes(router, context) {
       // Build outcome number mapping from live feature data
       const outcomeMap = extractOutcomesFromFeatures(allFeatures);
       const featureToOutcomeNumber = {};
+      const featureToOutcomeKey = {};
       PRIORITY_OUTCOMES.forEach((outcomeKey, index) => {
         const outcome = outcomeMap[outcomeKey];
         if (outcome && outcome.children) {
           outcome.children.forEach(childKey => {
             featureToOutcomeNumber[childKey] = index + 1;
+            featureToOutcomeKey[childKey] = outcomeKey;
           });
         }
       });
@@ -279,7 +281,7 @@ module.exports = function registerAIPlannerRoutes(router, context) {
         Components: f.components || [],
         Team: f.team || '',
         Priority: f.priority || '',
-        Outcome: f.parentKey || '', // Outcome KEY (RHAISTRAT-*) for clickable link
+        Outcome: featureToOutcomeKey[f.key] || '', // Outcome KEY (RHAISTRAT-*) from feature→outcome mapping
         PlannedFor: (f.targetVersions && f.targetVersions[0]) || '',
         Score: f.riceScore || 0,
         // FPDoR is an object {passedCount, totalCount} - convert to string format

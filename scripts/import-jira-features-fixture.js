@@ -83,6 +83,7 @@ function main() {
   const iPm = col('PM');
   const iAssignee = col('Assignee');
   const iAssigneeId = col('Assignee Id');
+  const iParent = col('Parent');
   const cComponents = columns(header, 'Components');
   const cTargetVersions = columns(header, 'Custom field (Target Version)');
   const cFixVersions = columns(header, 'Fix versions');
@@ -120,7 +121,7 @@ function main() {
       created: iCreated === -1 ? null : (row[iCreated] || '').trim() || null,
       updated: iUpdated === -1 ? null : (row[iUpdated] || '').trim() || null,
       architect: null,
-      parentKey: null,
+      parentKey: iParent === -1 ? null : (row[iParent] || '').trim() || null,
       colorStatus: null,
       ownerStatusColor: null
     };
@@ -151,7 +152,7 @@ function main() {
       targetVersions: feature.targetVersions,
       pm: feature.pm,
       architect: null,
-      parentKey: null,
+      parentKey: feature.parentKey,
       colorStatus: null,
       ownerStatusColor: null,
       lastUpdated: feature.updated

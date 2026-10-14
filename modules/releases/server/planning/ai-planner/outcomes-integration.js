@@ -105,7 +105,7 @@ function calculateOutcomeMetrics(outcomes, inPlanFeatures, allFeatures) {
 
     // Status logic: confident if all children ready, otherwise pending
     let status = 'Confident';
-    if (inPlan === 0 && total > 0) {
+    if (total === 0 || (inPlan === 0 && total > 0)) {
       status = 'No features in plan';
     } else if (inPlan < total) {
       status = avgConfidence >= 70 ? 'Confident' : 'Lagging';
