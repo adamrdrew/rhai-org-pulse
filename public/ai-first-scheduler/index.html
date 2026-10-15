@@ -520,6 +520,7 @@ tr:hover td{background:#f8fafc}
         <th>TITLE</th>
         <th>OUTCOME</th>
         <th title="Target Version — the planned release milestone for this feature">TARGET VERSION</th>
+        <th title="Fix Version — the resolved/fixed version in Jira">FIX VERSION</th>
         <th>COMPONENTS</th>
         <th><span class="tip">SIZE ⓘ<span class="tip-box">Feature size from Arjay's capacity model:<br>S=3pts (1 comp) · M=5pts (1 comp) · L=8pts (2 comps) · XL=13pts (3+ comps)<br>Ceiling: 140pts / release (90% CI, 41 releases)</span></span></th>
         <th>TEAM</th>
@@ -2836,7 +2837,7 @@ document.addEventListener('click',function(e){
 
 // Receive logged-in user from Org Pulse parent iframe via postMessage.
 // Org Pulse sends { type: 'pm-user', actor: 'wcaban' } or { type: 'eng-user', actor: 'dipika' } after the iframe loads.
-window.addEventListener('message', function(e){
+window.addEventListener('message', async function(e){
   if(!e.data) return;
   if(e.origin!==window.location.origin) return;
   const actor=(e.data.actor||'').split('@')[0].toLowerCase();
@@ -2900,10 +2901,13 @@ window.addEventListener('message', function(e){
       schedule(mapped);
       allData = mapped;
       dataSource = 'live';
-      // Re-apply outcome mappings after postMessage data load to prevent numbers from disappearing
-      if (outcomeData && outcomeData.outcomes && outcomeData.outcomes.length > 0) {
-        mapFeaturesToOutcomes();
+      // Ensure outcomes are loaded before applying outcome mappings
+      if (!outcomeData || !outcomeData.outcomes || outcomeData.outcomes.length === 0) {
+        // Fetch outcomes synchronously if not yet available
+        await fetchOutcomes();
       }
+      // Apply outcome mappings to populate OutcomeNumber field for sorting
+      mapFeaturesToOutcomes();
     } catch (err) {
       console.error('AI Planner: could not schedule live data, keeping previous rows', err);
     }
@@ -3181,21 +3185,28 @@ function renderRoadmapTimeline(data){
   const phases = ['EA1','EA2','GA'];
   const grid = {};
   window._drilldownMap={};
-  BIG_ROCKS.forEach(br=>{ grid[br.name]={EA1:{c:0,s:0,done:0,wip:0,feats:[]},EA2:{c:0,s:0,done:0,wip:0,feats:[]},GA:{c:0,s:0,done:0,wip:0,feats:[]},No:{c:0,s:0,done:0,wip:0,feats:[]}}; });
+  // Use new 22 RHAISTRAT outcomes if available; fall back to BIG_ROCKS for backward compatibility
+  const outcomes = (outcomeData && outcomeData.outcomes && outcomeData.outcomes.length > 0)
+    ? outcomeData.outcomes
+    : BIG_ROCKS.map(br => ({ key: br.name, title: br.name, outcomeNumber: 0 }));
+  outcomes.forEach(o=>{
+    const name = o.key || o.name;
+    grid[name]={EA1:{c:0,s:0,done:0,wip:0,feats:[]},EA2:{c:0,s:0,done:0,wip:0,feats:[]},GA:{c:0,s:0,done:0,wip:0,feats:[]},No:{c:0,s:0,done:0,wip:0,feats:[]}};
+  });
   data.forEach(r=>{
-    if(!r._bigRocks||!r._bigRocks.length) return;
+    const outcomeKey = r['Outcome'] || (r._bigRocks && r._bigRocks[0]);
+    if(!outcomeKey) return;
     const ph = phases.includes(r._place) ? r._place : 'No';
     const st = (r._status||esc(r['Status'])||'').toLowerCase();
     const done = /done|closed|released|release pending/.test(st);
     const wip  = /in progress|review|testing/.test(st);
-    r._bigRocks.forEach(name=>{
-      if(!grid[name]) return;
-      grid[name][ph].c++;
-      grid[name][ph].s += (r._conf||0);
-      if(done) grid[name][ph].done++;
-      else if(wip) grid[name][ph].wip++;
-      grid[name][ph].feats.push({key:esc(r['Key'])||'',title:(esc(r['Title'])||esc(r['Summary'])||''),conf:Math.round(r._conf||0)});
-    });
+    if(grid[outcomeKey]){
+      grid[outcomeKey][ph].c++;
+      grid[outcomeKey][ph].s += (r._conf||0);
+      if(done) grid[outcomeKey][ph].done++;
+      else if(wip) grid[outcomeKey][ph].wip++;
+      grid[outcomeKey][ph].feats.push({key:esc(r['Key'])||'',title:(esc(r['Title'])||esc(r['Summary'])||''),conf:Math.round(r._conf||0)});
+    }
   });
   function bgColor(c,avg){ if(!c) return '#fafafa'; if(avg>=70) return '#e8f5e9'; if(avg>=50) return '#fff8e1'; return '#ffebee'; }
   function cell(c,s,done,wip){
@@ -3205,22 +3216,24 @@ function renderRoadmapTimeline(data){
     return `<strong>${c}</strong><br><span style="font-size:10px;color:#555">${Math.round(s/c)}% avg</span><br>${statusLine}`;
   }
   let rows='';
-  BIG_ROCKS.forEach(br=>{
-    const g=grid[br.name];
+  outcomes.forEach(o=>{
+    const name = o.key || o.name;
+    const g=grid[name];
+    if(!g) return;
     const total=phases.reduce((s,p)=>s+g[p].c,0)+g.No.c;
     if(!total) return;
-    const mtBadge=(br.externalDeps&&br.externalDeps.length>0)||br.sharedDep?'<span style="font-size:8px;font-weight:700;background:#e8eaf6;color:#3949ab;border-radius:3px;padding:1px 4px;margin-left:4px;vertical-align:middle" title="Multi-team coordination required">🤝</span>':'';
-    rows+=`<tr><td style="font-weight:600;white-space:nowrap">${br.name}${mtBadge}</td>
-      <td style="text-align:center;font-size:11px;color:#777;white-space:nowrap">${br.pillar}</td>`;
+    const displayName = o.title || o.key || name;
+    rows+=`<tr><td style="font-weight:600;white-space:nowrap">${esc(displayName)}</td>
+      <td style="text-align:center;font-size:11px;color:#777;white-space:nowrap">—</td>`;
     phases.forEach(p=>{
       const {c,s,done,wip,feats}=g[p];
-      const cellId=`${br.name}|||${p}`;
+      const cellId=`${name}|||${p}`;
       window._drilldownMap[cellId]=feats;
       const clickAttr=c?` data-cell-id="${cellId}" onclick="showRoadmapDrilldown(event)"`:'';
       rows+=`<td style="text-align:center;background:${bgColor(c,c?s/c:0)}${c?';cursor:pointer':''}"${clickAttr}>${cell(c,s,done,wip)}</td>`;
     });
     const {c:nc,s:ns,done:nd,wip:nw,feats:nf}=g.No;
-    const noId=`${br.name}|||No`;
+    const noId=`${name}|||No`;
     window._drilldownMap[noId]=nf;
     const noClick=nc?` data-cell-id="${noId}" onclick="showRoadmapDrilldown(event)"`:'';
     rows+=`<td style="text-align:center;background:${nc?'#ffebee':'#fafafa'}${nc?';cursor:pointer':''}"${noClick}>${cell(nc,ns,nd,nw)}</td></tr>`;
@@ -3295,7 +3308,7 @@ function run(){
     if(assign&&(r['Assignee']||'').trim()!==assign) return false;
     if(pri&&esc(r['Priority'])!==pri) return false;
     if(fail&&!(r['Failed FPDoR Items']||'').includes(fail)) return false;
-    if(bigRockOnly&&!r._isBigRock) return false;
+    if(bigRockOnly&&!r['Outcome']) return false;
     if(window._selectedBR&&!(r._bigRocks&&r._bigRocks.includes(window._selectedBR))) return false;
     return true;
   });
@@ -3307,7 +3320,12 @@ function run(){
   rows=rows.slice().sort((a,b)=>{
     let va=a[sortCol],vb=b[sortCol];
     if(sortCol==='Score'||sortCol==='Rank'){va=+va;vb=+vb;}
-    else if(sortCol==='OutcomeNumber'){va=+va||Infinity;vb=+vb||Infinity;}
+    else if(sortCol==='OutcomeNumber'){
+      const numA = parseInt(va) || Infinity;
+      const numB = parseInt(vb) || Infinity;
+      va = numA;
+      vb = numB;
+    }
     else if(sortCol==='FPDoR'){
       const vaStr = typeof va === 'string' ? va : (va?.passedCount + '/' + va?.totalCount || '0');
       const vbStr = typeof vb === 'string' ? vb : (vb?.passedCount + '/' + vb?.totalCount || '0');
@@ -3552,6 +3570,7 @@ function renderTbl(rows){
       <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis" title="${esc(r['Title'])}">${hasCrossTeamDep?'<span style="font-size:9px;font-weight:700;color:#7c3aed;background:#f3e8ff;border:1px solid #c4b5fd;border-radius:3px;padding:1px 4px;margin-right:3px;white-space:nowrap" title="Cross-team dependency flagged — external teams involved; slippage risk outside RHOAI control">⚑ deps</span>':''}${esc(r['Title'])}<div class="compact-key-link"><a href="https://redhat.atlassian.net/browse/${esc(r['Key'])}" target="_blank" style="color:#94a3b8;text-decoration:none">${esc(r['Key'])}</a></div></td>
       <td style="max-width:140px;white-space:normal;line-height:1.4">${r._isBigRock?'<span class="br-badge">🪨 BR</span>':''}${brGapHtml}${esc(r['Outcome'])?`<a href="https://redhat.atlassian.net/browse/${esc(r['Outcome'])}" target="_blank" style="color:#1565c0;text-decoration:none;font-weight:600" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">${esc(r['Outcome'])}</a>`:'<span style="color:#bbb">—</span>'}</td>
       <td style="white-space:nowrap;font-size:11px;color:#555">${(esc(r['Target Versions'])||'').trim()||'—'}</td>
+      <td style="white-space:nowrap;font-size:11px;color:#555">${(esc(r['Fix Version'])||'').trim()||'—'}</td>
       <td title="${esc(r['Components'])}" style="max-width:160px;color:#444">${compsStr||'—'}${r._complexityWarn?`<div style="font-size:9px;color:#e65100;font-weight:700;margin-top:1px" title="${esc(String(r._comps.length))} components — cross-team delivery risk (spec: 6+ = complexity flag)">⚠ ${esc(String(r._comps.length))} comps</div>`:''}</td>
       <td style="white-space:nowrap;text-align:center"><span style="font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;background:${r._featureSize==='XL'?'#4a1a4a':r._featureSize==='L'?'#1a3a4a':r._featureSize==='M'?'#1a3a1a':'#2a2a1a'};color:${r._featureSize==='XL'?'#e040fb':r._featureSize==='L'?'#40c4ff':r._featureSize==='M'?'#69f0ae':'#ffee58'}">${r._featureSize}</span><span style="font-size:9px;color:#888;margin-left:3px">${r._featurePts}pt</span></td>
       <td style="font-size:11px;color:#555;white-space:nowrap">${esc(r['Team'])||'—'}</td>
