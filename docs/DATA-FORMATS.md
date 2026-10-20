@@ -2829,6 +2829,28 @@ The dataset is four separate JSON files under `data/system-health/test-execution
 
 ---
 
+## Product Builds Channels API
+
+`GET /api/modules/product-builds/channels?limit=1000&offset=0` proxies the
+configured dashboard's `{ source, as_of, channels }` response and pagination
+headers. The client follows additional pages to populate the matrix.
+`GET /api/modules/product-builds/channels/{name}` returns
+`{ source, as_of, channel }`, with `wheels` and `drops` included in the channel.
+Org Pulse does not persist or enrich these responses.
+
+The dashboard uses `source: "dashboard"`, numeric RHEL version strings such as
+`"9.8"`, and display release labels such as `"RHOAI 3.6-EA2"`.
+`latest_drop` can be null and `drops` can be empty. Wheels contain `name` and
+`version`; `kind` and the summary's `wheel_kinds` are optional. Per-drop
+`changes` may be empty and `torch_version` may be null. These missing values
+are preserved rather than inferred. `as_of` is the newest channel metadata
+update across the collection, not a guarantee of package-crawl freshness.
+
+The representative list and detail contracts in
+`fixtures/product-builds/channels-api.json` support deterministic tests.
+They are not a live-data fallback. Only demo mode without a configured
+dashboard URL uses the separate sample catalog (`source: "sample"`).
+
 ## AI Catalyst Feed Configuration
 
 `data/ai-catalyst/board-config.json` and

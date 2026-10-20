@@ -4,6 +4,7 @@ const ProductView = defineAsyncComponent(() => import('./views/ProductView.vue')
 
 export const routes = {
   'overview': defineAsyncComponent(() => import('./views/OverviewView.vue')),
+  'channels': defineAsyncComponent(() => import('./views/ChannelsView.vue')),
   'search': defineAsyncComponent(() => import('./views/SearchResultsView.vue')),
   'release-status': defineAsyncComponent(() => import('./views/ReleaseStatusView.vue')),
   'rhaiis': ProductView,

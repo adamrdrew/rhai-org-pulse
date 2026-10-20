@@ -1,0 +1,74 @@
+{
+  "list": {
+    "source": "dashboard",
+    "as_of": "2026-10-17T20:50:46.247000",
+    "channels": [
+      {
+        "name": "cuda13.0-torch2.11-el9.8",
+        "description": "CUDA 13.0 with Torch 2.11 on RHEL 9.8",
+        "maturity": "stable",
+        "accelerator": "cuda",
+        "accelerator_version": "13.0",
+        "torch_version": "2.11",
+        "rhel_version": "9.8",
+        "os_release": "el9.8",
+        "python_version": "3.12",
+        "architectures": ["aarch64", "x86_64"],
+        "compatible_releases": ["RHOAI 3.6-EA2"],
+        "visibility": "public",
+        "index_url": "https://packages.redhat.com/api/pypi/public-rhai/cuda13.0-torch2.11-el9.8/simple/",
+        "base_image": "quay.io/aipcc/base-images/cuda13.0-torch2.11-el9.8",
+        "wheel_count": 2,
+        "drop_count": 0,
+        "latest_drop": null
+      },
+      {
+        "name": "cpu-torch2.15-el9.8",
+        "description": "CPU with Torch 2.15 on RHEL 9.8",
+        "maturity": "rolling",
+        "accelerator": "cpu",
+        "accelerator_version": "",
+        "torch_version": "2.15",
+        "rhel_version": "9.8",
+        "os_release": "el9.8",
+        "python_version": "3.12",
+        "architectures": ["x86_64"],
+        "compatible_releases": [],
+        "visibility": "public",
+        "index_url": "https://packages.redhat.com/api/pypi/public-rhai/cpu-torch2.15-el9.8/simple/",
+        "base_image": "quay.io/aipcc/base-images/cpu-torch2.15-el9.8",
+        "wheel_count": 0,
+        "drop_count": 0,
+        "latest_drop": null
+      }
+    ]
+  },
+  "detail": {
+    "source": "dashboard",
+    "as_of": "2026-10-17T20:50:46.247000",
+    "channel": {
+      "name": "cuda13.0-torch2.11-el9.8",
+      "description": "CUDA 13.0 with Torch 2.11 on RHEL 9.8",
+      "maturity": "stable",
+      "accelerator": "cuda",
+      "accelerator_version": "13.0",
+      "torch_version": "2.11",
+      "rhel_version": "9.8",
+      "os_release": "el9.8",
+      "python_version": "3.12",
+      "architectures": ["aarch64", "x86_64"],
+      "compatible_releases": ["RHOAI 3.6-EA2"],
+      "visibility": "public",
+      "index_url": "https://packages.redhat.com/api/pypi/public-rhai/cuda13.0-torch2.11-el9.8/simple/",
+      "base_image": "quay.io/aipcc/base-images/cuda13.0-torch2.11-el9.8",
+      "wheel_count": 2,
+      "drop_count": 0,
+      "latest_drop": null,
+      "wheels": [
+        { "name": "numpy", "version": "2.3.4" },
+        { "name": "torch", "version": "2.11.0" }
+      ],
+      "drops": []
+    }
+  }
+}

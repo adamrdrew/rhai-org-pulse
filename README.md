@@ -85,6 +85,21 @@ This starts both the Vite frontend (port 5173) and the Express backend (port 300
 - **Frontend:** http://localhost:5173
 - **API:** http://localhost:3001/api
 
+### Product Builds channel data
+
+Set `PRODUCT_BUILDS_API_URL` in `.env`, or the Product Builds API URL in
+Settings, to a dashboard service that exposes `GET /channels` and
+`GET /channels/{name}`. Restart the Express server after changing `.env`.
+The Channels view reads its catalog, package versions and base-image history
+through that service. A configured URL is used even when the rest of Org Pulse
+runs in demo mode. Only an unconfigured demo uses sample channels; failed
+dashboard requests remain errors.
+
+The page labels dashboard data and its catalog update date. An empty build
+history and missing wheel classifications are displayed as supplied by the
+dashboard. The catalog update date does not guarantee every package index
+was refreshed successfully.
+
 ### 4. Configure roster sync (first run)
 
 On first launch, a yellow banner will appear directing you to **Settings**. There you can configure:

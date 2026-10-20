@@ -1037,6 +1037,12 @@ module.exports = function registerRoutes(router, context) {
   // --- Package Requests ---
   require('./package-requests')(router, context);
 
+  // --- Channels ---
+  require('./channels')(router, {
+    getBaseUrl: async () => (await getConfig(readFromStorage)).baseUrl,
+    demoMode: DEMO_MODE,
+  });
+
   if (context.registerDiagnostics) {
     context.registerDiagnostics(async function() {
       const index = await readFromStorage(PKG_INDEX_PATH);

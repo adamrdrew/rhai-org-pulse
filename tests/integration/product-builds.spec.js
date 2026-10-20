@@ -1,6 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const { DEFAULT_PAGE_WAIT_TIME } = require('./constants');
 const { setupErrorTracking, logCapturedErrors, mainContentIsVisible } = require('./helpers');
+const dashboardChannels = require('../../fixtures/product-builds/channels-api.json');
 
 /**
  * Integration tests for Product Builds module
@@ -136,7 +137,7 @@ test.describe('Product Builds Module @product-builds', () => {
 
     expect(page.url()).toMatch(/product-builds\/package-analysis/);
     await expect(page.getByRole('heading', { name: 'Package Analysis' })).toBeVisible();
-    await expect(page.getByText('Package EPIC analysis for AIPCC and RHAI', { exact: false })).toBeVisible();
+    await expect(page.getByText('Package epic analysis and tracking for AIPCC and RHAI', { exact: false })).toBeVisible();
 
     const appErrors = page.errors.filter(e => !/status of (429|404|503)/.test(e.message));
     expect(appErrors).toHaveLength(0);
@@ -363,21 +364,17 @@ test.describe('Product Builds Module @product-builds', () => {
   })
 
   test('should show CHI column header in artifacts tab', async ({ page }) => {
+    await page.route('**/api/modules/product-builds/products/rhaiis', route => route.fulfill({ json: {
+      key: 'rhaiis', product_name: 'Red Hat AI Inference Server', short_name: 'RHAIIS',
+    } }));
+    await page.route('**/api/modules/product-builds/artifacts?*', route => route.fulfill({ json: [{
+      key: 'quay.io/example/rhaiis:test', variant: 'cuda', archs: ['x86_64'], environments: ['stage'],
+      health_index: { grade: 'A', vulnerability_count: 0 }, konflux_data: { tests: [] },
+    }] }));
     await page.goto('/#/product-builds/rhaiis');
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
-
-    const artifactsTab = page.locator('button').filter({ hasText: 'Artifacts' });
-    if (await artifactsTab.isVisible()) {
-      await artifactsTab.click();
-      await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
-
-      const chiHeader = page.locator('th').filter({ hasText: 'CHI' });
-      await expect(chiHeader).toBeVisible();
-
-      const testsHeader = page.locator('th').filter({ hasText: 'Tests' });
-      await expect(testsHeader).toBeVisible();
-    }
+    await page.getByRole('button', { name: 'Artifacts', exact: true }).click();
+    await expect(page.getByRole('columnheader', { name: 'CHI', exact: true })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Tests', exact: true })).toBeVisible();
 
     const appErrors = page.errors.filter(e => !/status of (429|404|503)/.test(e.message));
     expect(appErrors).toHaveLength(0);
@@ -445,5 +442,131 @@ test.describe('Product Builds Module @product-builds', () => {
 
     const appErrors = page.errors.filter(e => !/status of (429|404|503)/.test(e.message));
     expect(appErrors).toHaveLength(0);
+  });
+
+  test('should return channel data from the API', async ({ request }) => {
+    const list = await request.get('/api/modules/product-builds/channels');
+    expect(list.ok()).toBe(true);
+    const { channels } = await list.json();
+    expect(channels.length).toBeGreaterThan(0);
+    expect(channels.some(c => c.maturity === 'stable')).toBe(true);
+    expect(channels.some(c => c.maturity === 'rolling')).toBe(true);
+
+    const detail = await request.get(`/api/modules/product-builds/channels/${encodeURIComponent(channels[0].name)}`);
+    expect(detail.ok()).toBe(true);
+    const { channel } = await detail.json();
+    expect(channel.name).toBe(channels[0].name);
+    expect(Array.isArray(channel.drops)).toBe(true);
+    expect(Array.isArray(channel.wheels)).toBe(true);
+
+    const missing = await request.get('/api/modules/product-builds/channels/does-not-exist');
+    expect(missing.status()).toBe(404);
+  });
+
+  test('should show the Channels view with matrix and table', async ({ page }) => {
+    await page.goto('/#/product-builds/channels');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    const nav = page.locator('aside nav').getByText('Channels', { exact: true });
+    await expect(nav).toBeVisible();
+
+    await expect(page.locator('h1').filter({ hasText: 'Channels' })).toBeVisible();
+    await expect(page.locator('[data-testid="channel-matrix"]')).toBeVisible();
+    await expect(page.locator('[data-testid="channel-row"]').first()).toBeVisible();
+
+    await page.getByRole('button', { name: 'Rolling', exact: true }).click();
+    const rows = page.locator('[data-testid="channel-row"]');
+    const rowCount = await rows.count();
+    expect(rowCount).toBeGreaterThan(0);
+    for (let i = 0; i < rowCount; i++) {
+      await expect(rows.nth(i)).toContainText('Rolling');
+    }
+
+    const appErrors = page.errors.filter(e => !/status of (429|404|503)/.test(e.message));
+    expect(appErrors).toHaveLength(0);
+  });
+
+  test('should open a channel and browse its drops and wheels', async ({ page, request }) => {
+    const { channels } = await (await request.get('/api/modules/product-builds/channels?limit=1000')).json();
+    const selected = channels.find(c => c.wheel_count > 0);
+    expect(selected).toBeTruthy();
+    const { channel } = await (await request.get(`/api/modules/product-builds/channels/${encodeURIComponent(selected.name)}`)).json();
+    await page.goto('/#/product-builds/channels');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    const channelName = selected.name;
+    const cell = page.getByRole('button', { name: `Open channel ${channelName}`, exact: true });
+    await cell.click();
+
+    const drawer = page.locator('[data-testid="channel-drawer"]');
+    await expect(drawer).toBeVisible();
+    await expect(drawer).toContainText(channelName);
+    expect(page.url()).toContain(`channel=${encodeURIComponent(channelName)}`);
+    if (channel.drops.length) {
+      await expect(drawer.locator('[data-testid="channel-drop"]').first()).toBeVisible();
+    } else {
+      await expect(drawer.getByText('No RHAIBI drop includes this channel yet.')).toBeVisible();
+    }
+
+    await drawer.getByRole('tab', { name: /Wheels/ }).click();
+    await expect(drawer.locator('[data-testid="channel-wheel"]').first()).toBeVisible();
+    const wheelFilter = drawer.getByLabel('Filter wheels by name');
+    const wheelName = channel.wheels[0].name;
+    await wheelFilter.fill(wheelName);
+    await expect(drawer.locator('[data-testid="channel-wheel"]')).toHaveCount(
+      channel.wheels.filter(w => w.name.toLowerCase().includes(wheelName.toLowerCase())).length
+    );
+
+    // Escape clears the wheel filter first, then closes the drawer.
+    await wheelFilter.press('Escape');
+    await expect(wheelFilter).toHaveValue('');
+    await expect(drawer).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(drawer).toBeHidden();
+    expect(page.url()).not.toContain('channel=');
+
+    const appErrors = page.errors.filter(e => !/status of (429|404|503)/.test(e.message));
+    expect(appErrors).toHaveLength(0);
+  });
+
+  test('should deep link to a channel', async ({ page, request }) => {
+    const { channels } = await (await request.get('/api/modules/product-builds/channels')).json();
+    const channelName = channels[0].name;
+    await page.goto(`/#/product-builds/channels?channel=${encodeURIComponent(channelName)}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(DEFAULT_PAGE_WAIT_TIME);
+
+    const drawer = page.locator('[data-testid="channel-drawer"]');
+    await expect(drawer).toBeVisible();
+    await expect(drawer).toContainText(channelName);
+
+    const appErrors = page.errors.filter(e => !/status of (429|404|503)/.test(e.message));
+    expect(appErrors).toHaveLength(0);
+  });
+
+  test('should render the dashboard channel contract with empty history and unclassified wheels', async ({ page }) => {
+    await page.route('**/api/modules/product-builds/channels?*', route => route.fulfill({ json: dashboardChannels.list }));
+    await page.route('**/api/modules/product-builds/channels/*', route => route.fulfill({ json: dashboardChannels.detail }));
+    await page.goto(`/#/product-builds/channels?channel=${dashboardChannels.detail.channel.name}`);
+
+    await expect(page.getByTestId('channels-source-note')).toContainText('Dashboard data');
+    await expect(page.getByTestId('channels-sample-note')).toHaveCount(0);
+    await expect(page.getByTestId('channel-matrix')).toContainText('RHOAI 3.6-EA2');
+    const drawer = page.getByTestId('channel-drawer');
+    await expect(drawer).toContainText('RHEL 9.8');
+    const registryLink = drawer.getByRole('link', { name: dashboardChannels.detail.channel.base_image, exact: true });
+    await expect(registryLink).toBeVisible();
+    await expect(registryLink).toHaveAttribute('href', 'https://quay.io/repository/aipcc/base-images/cuda13.0-torch2.11-el9.8?tab=tags');
+    await expect(registryLink).toHaveAttribute('target', '_blank');
+    await expect(registryLink).toHaveAttribute('rel', 'noopener noreferrer');
+    await expect(drawer).toContainText('No RHAIBI drop includes this channel yet.');
+    await expect(drawer.getByRole('button', { name: 'Copy', exact: true })).toBeVisible();
+    await drawer.getByRole('tab', { name: /Wheels/ }).click();
+    await expect(drawer.getByTestId('channel-wheel')).toHaveCount(2);
+    await expect(drawer).toContainText('2.11.0');
+    await expect(drawer.getByText('Accelerator builds', { exact: false })).toHaveCount(0);
+    expect(page.errors).toHaveLength(0);
   });
 });
