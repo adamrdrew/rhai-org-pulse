@@ -281,7 +281,7 @@ tr:hover td{background:#f8fafc}
     onmouseleave="this.style.borderBottomColor='transparent'"
     oninput="saveBannerText()"
     onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur()}"
-  >3.7 Planning — We will have one EA release. Planning Freeze <strong style="color:#b45309">Oct 28 (RHOAI)</strong> · <strong style="color:#b45309">Nov 4 (AIPCC)</strong>. Automated planning will be fully embedded in the planning process, including a soft planning freeze milestone.</span>
+  >3.7 Planning — We will have one EA release. <strong style="color:#b45309">RHAI Planning Freeze Nov 11th</strong>. Automated planning will be fully embedded in the planning process, including a soft planning freeze milestone.</span>
   <span style="margin-left:auto;color:#92400e;font-style:italic;white-space:nowrap">3.7 EA2: Jan 20 · GA: Feb 17</span>
 </div>
 
@@ -408,7 +408,7 @@ tr:hover td{background:#f8fafc}
       <span style="color:#ccc">·</span>
       <span id="st-in" style="color:#1a7f37;font-weight:600;font-size:11px">— in-plan</span>
       <span id="st-no" style="display:none"></span>
-      <button class="btn btn-red" onclick="run()" style="font-size:11px;padding:3px 10px" title="Refresh — re-scores features with current data">↻ Refresh</button>
+      <button class="btn btn-red" onclick="fetchOutcomes(); run()" style="font-size:11px;padding:3px 10px" title="Refresh — re-scores features and outcomes with current data">↻ Refresh</button>
       <button class="btn" onclick="doExport()" style="font-size:11px;padding:3px 10px">Export</button>
       <div style="position:relative;display:inline-block">
         <button id="hamburger-btn" onclick="toggleHamburger(event)" title="Architecture & Data Appendix" style="font-size:16px;padding:4px 11px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer;color:#475569;line-height:1;font-weight:700;letter-spacing:1px">☰</button>
@@ -2927,6 +2927,10 @@ window.onload=()=>{
   // Fetch 22 prioritized outcomes from API (replaces hardcoded BIG_ROCKS)
   fetchOutcomes();
 
+  // Live sync: Refresh outcomes every 12 hours (matches feature sync cadence from Jira)
+  // Features are synced every 12h, so outcomes (extracted from feature parentKey) auto-update
+  setInterval(fetchOutcomes, 12 * 60 * 60 * 1000);
+
   // Role-based tab defaults (Sept 18 update): PM → Features, Delivery lead → Roadmap, ENG lead → default components
   const userRole = localStorage.getItem('userRole') || 'pm'; // 'pm', 'delivery', or 'eng'
   const engLead = localStorage.getItem('engLead') || null; // engineering lead name
@@ -3321,10 +3325,20 @@ function run(){
     let va=a[sortCol],vb=b[sortCol];
     if(sortCol==='Score'||sortCol==='Rank'){va=+va;vb=+vb;}
     else if(sortCol==='OutcomeNumber'){
-      const numA = parseInt(va) || Infinity;
-      const numB = parseInt(vb) || Infinity;
-      va = numA;
-      vb = numB;
+      // Handle em-dash (—) for features without outcomes
+      const isEmDashA = va === '—' || va === null || va === undefined;
+      const isEmDashB = vb === '—' || vb === null || vb === undefined;
+
+      // If both are em-dash, keep original order
+      if(isEmDashA && isEmDashB) return 0;
+      // If only A is em-dash, send to end
+      if(isEmDashA) return 1;
+      // If only B is em-dash, send to end
+      if(isEmDashB) return -1;
+
+      // Both have outcome numbers - compare numerically
+      va = parseInt(va) || Infinity;
+      vb = parseInt(vb) || Infinity;
     }
     else if(sortCol==='FPDoR'){
       const vaStr = typeof va === 'string' ? va : (va?.passedCount + '/' + va?.totalCount || '0');
