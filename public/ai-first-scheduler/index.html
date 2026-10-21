@@ -3531,16 +3531,20 @@ function run(){
     r._noTier=1;                                           // missing some analysis fields, PM can fix
   });
 
-  const PLACE_ORDER={'EA1':0,'EA2':1,'GA':2,'No':3};
-  rows.sort((a,b)=>{
-    const pg=(PLACE_ORDER[a._place]??3)-(PLACE_ORDER[b._place]??3);
-    if(pg!==0) return pg;
-    if(a._place==='No'&&b._place==='No'){
-      const tg=(a._noTier||1)-(b._noTier||1);
-      if(tg!==0) return tg;
-    }
-    return (b._conf||0)-(a._conf||0);
-  });
+  // Only apply placement-based grouping if NOT sorting by OutcomeNumber
+  // When sorting by OutcomeNumber, preserve that sort order
+  if(sortCol !== 'OutcomeNumber'){
+    const PLACE_ORDER={'EA1':0,'EA2':1,'GA':2,'No':3};
+    rows.sort((a,b)=>{
+      const pg=(PLACE_ORDER[a._place]??3)-(PLACE_ORDER[b._place]??3);
+      if(pg!==0) return pg;
+      if(a._place==='No'&&b._place==='No'){
+        const tg=(a._noTier||1)-(b._noTier||1);
+        if(tg!==0) return tg;
+      }
+      return (b._conf||0)-(a._conf||0);
+    });
+  }
 
   window._brGapMap={};
   BIG_ROCKS.forEach(br=>{window._brGapMap[br.name]=0;});
@@ -3553,7 +3557,13 @@ function run(){
   if(document.getElementById('tab-executive')?.classList.contains('active')) renderExecView();
 }
 function v(id){return document.getElementById(id).value;}
-function sort(col){sortCol===col?sortAsc=!sortAsc:(sortCol=col,sortAsc=true);run();}
+function sort(col){
+  sortCol===col?sortAsc=!sortAsc:(sortCol=col,sortAsc=true);
+  run();
+  // Note: Sorting by OutcomeNumber is always available (1-22 for linked outcomes, "—" for unlinked).
+  // It works whether or not "Outcomes only" filter is active. If most features show "—",
+  // sorting may appear to do nothing because they all have the same value.
+}
 
 function renderCards(rows){
   const c={EA1:0,EA2:0,GA:0,No:0};
@@ -4087,10 +4097,10 @@ function renderBigRocks(data){
       else if (outcome.inPlan === 0) { cls = 'br-miss'; icon = '✗'; }
       else if (outcome.inPlan < outcome.total) { cls = 'br-warn'; icon = '⚠'; }
 
-      const confColor = outcome.confidence >= 70 ? '#2e7d32' : outcome.confidence >= 40 ? '#f57f17' : '#c62828';
-      const confLabel = outcome.inPlan === 0 ? 'No features in plan' : outcome.confidence >= 70 ? '✓ Confident' : outcome.confidence >= 40 ? '⚠ Lagging' : '✗ At Risk';
+      // Use percentComplete (inPlan/total) for the main display, not confidence
+      const pctColor = outcome.percentComplete >= 80 ? '#2e7d32' : outcome.percentComplete >= 40 ? '#f57f17' : '#c62828';
 
-      return `<div class="br-item br-clickable ${cls}" title="Click to filter table to ${outcome.title}"><div class="br-name">${icon} ${outcome.key} ${outcome.title}</div><div style="font-size:13px;font-weight:700;color:${confColor};margin:4px 0 2px">${outcome.confidence}%</div><div style="font-size:10px;font-weight:600;color:${confColor};margin-bottom:3px">${confLabel}</div><div style="font-size:10px;color:#777">${outcome.inPlan}/${outcome.total} in-plan (${outcome.percentComplete}%)</div></div>`;
+      return `<div class="br-item br-clickable ${cls}" title="Click to filter table to ${outcome.title}"><div class="br-name">${icon} ${outcome.key} ${outcome.title}</div><div style="font-size:13px;font-weight:700;color:${pctColor};margin:4px 0 2px">${outcome.percentComplete}%</div><div style="font-size:10px;color:#777">${outcome.inPlan}/${outcome.total} in-plan</div></div>`;
     }).join('');
 
     panel.style.display = '';
@@ -4229,9 +4239,8 @@ async function fetchOutcomes() {
     const data = await res.json();
     if (data && data.outcomes && Array.isArray(data.outcomes)) {
       outcomeData = data;
-      if (data.featureOutcomeMap && typeof data.featureOutcomeMap === 'object') {
-        mapFeaturesToOutcomes();
-      }
+      // Don't call mapFeaturesToOutcomes() here — OutcomeNumber already comes from /ai-planner API
+      // which has the authoritative outcome mapping. The featureOutcomeMap is for the dropdown only.
       if (data.outcomes.length > 0) {
         populateOutcomeDropdown();
       }
@@ -4371,13 +4380,9 @@ function renderExecView(){
   const outcomeRows = (outcomeData && outcomeData.outcomes && outcomeData.outcomes.length > 0)
     ? outcomeData.outcomes.map(outcome => {
         if (outcome.total === 0) return '';
-        const statusIcon = outcome.inPlan === 0 ? '✗' : outcome.confidence >= 70 ? '✓' : '⚠';
-        const statusColor = outcome.inPlan === 0 ? '#c62828' : outcome.confidence >= 70 ? '#2e7d32' : '#f57f17';
         const pctColor = outcome.percentComplete >= 80 ? '#2e7d32' : outcome.percentComplete >= 50 ? '#f57f17' : '#c62828';
         const outcomeName = `${outcome.key} ${outcome.title}`;
         return `<tr style="border-bottom:1px solid #f0f0f0;cursor:pointer" data-outcome="${outcomeName}" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
-          <td style="padding:6px 10px;font-size:13px;font-weight:700;color:${statusColor}">${statusIcon}</td>
-          <td style="padding:6px 10px;font-size:10px;font-weight:700;color:#888">—</td>
           <td style="padding:6px 10px;font-size:11px;font-weight:600">${outcome.key} ${outcome.title}<span style="font-size:9px;color:#1d4ed8;margin-left:6px;cursor:pointer;font-weight:600" onclick="event.stopPropagation(); viewOutcomeFeatures('${outcome.key}')">→ view features</span></td>
           <td style="padding:6px 10px;font-size:11px;text-align:center">${outcome.inPlan}/${outcome.total}</td>
           <td style="padding:6px 10px;min-width:80px">
@@ -4391,14 +4396,9 @@ function renderExecView(){
     : BIG_ROCKS.map(br => {
         const d = s[br.name];
         if (d.total === 0) return '';
-        const statusIcon = d.inPlan === 0 ? '✗' : d.avgConf >= 70 ? '✓' : '⚠';
-        const statusColor = d.inPlan === 0 ? '#c62828' : d.avgConf >= 70 ? '#2e7d32' : '#f57f17';
-        const pillarColor = { 'Platform': '#6a1b9a', 'Inference': '#1565c0', 'Agents': '#2e7d32', 'Data': '#b8860b' }[br.pillar] || '#888';
         const pctDone = d.total > 0 ? Math.round(d.inPlan / d.total * 100) : 0;
         const pctColor = pctDone >= 80 ? '#2e7d32' : pctDone >= 50 ? '#f57f17' : '#c62828';
         return `<tr style="border-bottom:1px solid #f0f0f0" data-outcome="${br.name}" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
-          <td style="padding:6px 10px;font-size:13px;font-weight:700;color:${statusColor}">${statusIcon}</td>
-          <td style="padding:6px 10px;font-size:10px;font-weight:700;color:${pillarColor}">${br.pillar}</td>
           <td style="padding:6px 10px;font-size:11px;font-weight:600">P${br.priority} ${br.name}</td>
           <td style="padding:6px 10px;font-size:11px;text-align:center">${d.inPlan}/${d.total}</td>
           <td style="padding:6px 10px;min-width:80px">
@@ -4473,8 +4473,6 @@ function renderExecView(){
       <div style="font-size:12px;font-weight:700;color:#333;margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">🎯 Outcomes Coverage</div>
       <table style="width:100%;border-collapse:collapse">
         <thead><tr style="border-bottom:2px solid #f0f0f0">
-          <th style="text-align:left;padding:4px 10px;font-size:10px;color:#888;font-weight:600"></th>
-          <th style="text-align:left;padding:4px 10px;font-size:10px;color:#888;font-weight:600">PILLAR</th>
           <th style="text-align:left;padding:4px 10px;font-size:10px;color:#888;font-weight:600">OUTCOME</th>
           <th style="text-align:center;padding:4px 10px;font-size:10px;color:#888;font-weight:600">IN PLAN</th>
           <th style="text-align:center;padding:4px 10px;font-size:10px;color:#888;font-weight:600">% COMPLETE</th>
@@ -4582,9 +4580,9 @@ function renderScheduleStrip(){
     {lbl:'OCP5',date:'2026-10-15',cap:true,dot:'#cc0000'},
     {lbl:'AIPCC 3.6 GA Code Freeze',date:'2026-10-19'},
     {lbl:'RHOAI 3.6 GA Code Freeze',date:'2026-10-23'},
+    {lbl:'3.7 Planning',date:'2026-11-17',sep:true},
     {lbl:'3.6 GA Release',date:'2026-11-19',badge:'Informational launch',badgeColor:'#2e7d32'},
     // 3.7 (EA1 skipped)
-    {lbl:'3.7 Planning',date:'2026-11-17',sep:true},
     {lbl:'RHAI Planning Freeze',date:'2026-11-11',badge:'Mandatory from here',badgeColor:'#c62828'},
     {lbl:'3.7 EA2 Release Prep',date:'2026-12-15'},
     {lbl:'3.7 EA2 Release',date:'2027-01-20'},
