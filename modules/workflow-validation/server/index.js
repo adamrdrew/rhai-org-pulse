@@ -915,7 +915,7 @@ module.exports = function registerRoutes(router, context) {
    *       - { in: query, name: cursor, schema: { type: string }, description: Opaque search-after cursor }
    *       - { in: query, name: size, schema: { type: integer, default: 50 } }
    *     responses:
-   *       200: { description: Bugs page with KPIs }
+   *       200: { description: Jira issue occurrences with KPIs }
    */
   router.get('/bugs', requireAuth, safe(async function (req, res) {
     const size = paginationSize(req.query.size, 50);

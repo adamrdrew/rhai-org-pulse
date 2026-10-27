@@ -303,7 +303,7 @@ test.describe('Workflow Validation module @workflow-validation', () => {
     await expect(page.getByRole('combobox', { name: 'Test Run' })).toHaveValue('invocation-1')
     await expect(page.getByRole('combobox', { name: 'Test', exact: true })).toHaveValue('live-workflow')
     await expect(page.getByRole('option', { name: 'Other workflow' })).toHaveCount(0)
-    await expect(page.getByLabel('Search Jira keys, tests, components, or bug details…')).toHaveValue('timeout')
+    await expect(page.getByLabel('Search Jira keys, tests, components, or issue details…')).toHaveValue('timeout')
 
     await page.goto('/#/workflow-validation/workflows?testRun=productization&version=3.6&datePreset=all&dateFrom=&dateTo=')
     await expect(page.getByRole('combobox', { name: 'Test Suite' })).toHaveValue('productization')
@@ -311,7 +311,7 @@ test.describe('Workflow Validation module @workflow-validation', () => {
     await expect(page.getByRole('combobox', { name: 'Date range' })).toHaveValue('all')
   })
 
-  test('switches Jira between suite, release, date, and all-bug scopes', async ({ page }) => {
+  test('switches Jira between suite, release, date, and all-issue scopes', async ({ page }) => {
     const bugRequests = []
     const workflowRequests = []
     page.on('request', (request) => {
@@ -321,6 +321,7 @@ test.describe('Workflow Validation module @workflow-validation', () => {
 
     await page.goto('/#/workflow-validation/activity')
     await expect(page.getByLabel('View By')).toHaveValue('suite')
+    await expect(page.getByRole('option', { name: 'All Issues' })).toHaveCount(1)
     await expect(page.getByLabel('Test Suite')).toBeVisible()
     await expect(page.getByLabel('Show Issues From')).toHaveValue('run')
     await expect(page.getByLabel('Test Run')).toBeVisible()
@@ -365,10 +366,10 @@ test.describe('Workflow Validation module @workflow-validation', () => {
     await page.route('**/api/modules/workflow-validation/bugs?**', (route) => route.fulfill({ json: {
       total: 2, size: 50, nextCursor: null,
       kpis: { total: 2, opened: 1, distinctJira: 2 },
-      byCategory: [{ category: 'RFE', count: 1 }, { category: 'FUTURE_CATEGORY', count: 1 }],
+      byCategory: [{ category: 'FEATURE_REQUEST', count: 1 }, { category: 'FUTURE_CATEGORY', count: 1 }],
       byAction: [{ action: 'FILED', count: 1 }, { action: 'EXISTING', count: 1 }],
       bugs: [
-        { id: 'rfe', category: 'RFE', action: 'FILED', opened: true, bug_key: 'RHAIRFE-123', error_summary: 'Requested workflow enhancement' },
+        { id: 'rfe', category: 'FEATURE_REQUEST', action: 'FILED', opened: true, bug_key: 'RHAIRFE-123', error_summary: 'Requested workflow enhancement' },
         { id: 'future', category: 'FUTURE_CATEGORY', action: 'EXISTING', opened: false, bug_key: 'RHOAIENG-234', error_summary: 'Future issue category' }
       ]
     } }))
@@ -376,7 +377,7 @@ test.describe('Workflow Validation module @workflow-validation', () => {
 
     await expect(page.getByText('RHAIRFE-123')).toBeVisible()
     await expect(page.getByText('RHOAIENG-234')).toBeVisible()
-    await expect(page.getByText('Category: RFE')).toBeVisible()
+    await expect(page.getByText('Category: FEATURE REQUEST')).toBeVisible()
     await expect(page.getByText('Category: FUTURE CATEGORY')).toBeVisible()
     await expect(page.getByText('New Jira issue opened')).toBeVisible()
     await expect(page.getByText('Existing Jira issue encountered')).toBeVisible()

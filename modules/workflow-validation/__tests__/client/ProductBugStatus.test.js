@@ -21,7 +21,7 @@ describe('ProductBugStatus', () => {
     ['PRODUCT_BUG', 'EXISTING', 'Pre-existing product bug detected.'],
     ['UX_DEFECT', 'FILED', 'New UX defect opened.'],
     ['UX_DEFECT', 'EXISTING', 'Pre-existing UX defect detected.'],
-    ['RFE', 'FILED', 'New RFE opened.'],
+    ['FEATURE_REQUEST', 'FILED', 'New feature request opened.'],
     ['AUTOMATION_BUG', 'EXISTING', 'Pre-existing test automation defect detected.'],
   ])('keeps the Jira link and explanation for a %s with action %s', (category, action, description) => {
     const wrapper = mount(ProductBugStatus, { props: {

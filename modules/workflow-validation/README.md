@@ -92,8 +92,9 @@ Important rules:
 - Root causes may not have a Jira key.
 - Stakeholder-facing issue lists, charts, counts, and outcome classification
   include Jira-linked root causes of any category except `ENVIRONMENT` and
-  `CREDENTIAL_EXPOSURE`. New categories are included automatically when they
-  have a Jira key. Run detail and workflow history retain non-Jira root-cause
+  `CREDENTIAL_EXPOSURE`. This includes `FEATURE_REQUEST` findings (RFEs), and
+  new categories are included automatically when they have a Jira key. Run
+  detail and workflow history retain non-Jira root-cause
   findings except those two hidden categories.
 - Missing fields mean unknown unless their documented business meaning says
   otherwise.

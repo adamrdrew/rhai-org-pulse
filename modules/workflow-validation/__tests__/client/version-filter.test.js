@@ -61,7 +61,7 @@ describe('workflow-validation default version filter', () => {
     expect(displayedTestOutcome({ verdict: 'PASS' })).toBe('PASS')
     expect(displayedTestOutcome({ verdict: 'FAIL', productBugs: [{ category: 'PRODUCT_BUG', bug_key: 'RHOAIENG-1' }] })).toBe('FAIL')
     expect(displayedTestOutcome({ verdict: 'FAIL', productBugs: [{ category: 'UX_DEFECT', bug_key: 'RHOAIENG-99762' }] })).toBe('FAIL')
-    expect(displayedTestOutcome({ verdict: 'FAIL', productBugs: [{ category: 'RFE', bug_key: 'RHAIRFE-123' }] })).toBe('FAIL')
+    expect(displayedTestOutcome({ verdict: 'FAIL', productBugs: [{ category: 'FEATURE_REQUEST', bug_key: 'RHAIRFE-123' }] })).toBe('FAIL')
     expect(displayedTestOutcome({ verdict: 'FAIL', productBugs: [{ category: 'FUTURE_CATEGORY', bug_key: 'RHOAIENG-234' }] })).toBe('FAIL')
     expect(displayedTestOutcome({ verdict: 'FAIL', productBugs: [{ category: 'UX_DEFECT' }] })).toBe('SKIP')
     expect(displayedTestOutcome({ verdict: 'FAIL', productBugs: [{ category: 'PRODUCT_BUG' }] })).toBe('SKIP')

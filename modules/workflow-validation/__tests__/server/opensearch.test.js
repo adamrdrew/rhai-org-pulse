@@ -180,7 +180,7 @@ describe('workflow-validation live schema routes', () => {
 
   it('only filters RCA categories when explicitly requested', () => {
     expect(bugFilters()).toEqual({ match_all: {} })
-    expect(bugFilters({ category: 'RFE' }).bool.filter).toEqual([{ term: { category: 'RFE' } }])
+    expect(bugFilters({ category: 'FEATURE_REQUEST' }).bool.filter).toEqual([{ term: { category: 'FEATURE_REQUEST' } }])
     expect(bugFilters({ category: 'PRODUCT_BUG,UX_DEFECT' }).bool.filter).toEqual([
       { terms: { category: ['PRODUCT_BUG', 'UX_DEFECT'] } }
     ])
@@ -454,7 +454,7 @@ describe('workflow-validation live schema routes', () => {
       }, {
         _id: 'ux-defect', _source: { root_cause_id: 'ux-defect', run_id: 'invocation-1', workflow: 'test-a', category: 'UX_DEFECT', opened: true, action: 'FILED', bug_key: 'RHOAIENG-3' }, sort: ['2026-09-16', 'ux-defect']
       }, {
-        _id: 'rfe', _source: { root_cause_id: 'rfe', run_id: 'invocation-1', workflow: 'test-a', category: 'RFE', opened: true, action: 'FILED', bug_key: 'RHAIRFE-123' }, sort: ['2026-09-16', 'rfe']
+        _id: 'rfe', _source: { root_cause_id: 'rfe', run_id: 'invocation-1', workflow: 'test-a', category: 'FEATURE_REQUEST', opened: true, action: 'FILED', bug_key: 'RHAIRFE-123' }, sort: ['2026-09-16', 'rfe']
       }] } }))
     }))
     const routes = register()
@@ -467,12 +467,12 @@ describe('workflow-validation live schema routes', () => {
     expect(response.body.tests[0].productBugs).toEqual(expect.arrayContaining([
       expect.objectContaining({ bug_key: 'RHOAIENG-1', category: 'PRODUCT_BUG' }),
       expect.objectContaining({ bug_key: 'RHOAIENG-3', category: 'UX_DEFECT' }),
-      expect.objectContaining({ bug_key: 'RHAIRFE-123', category: 'RFE' })
+      expect.objectContaining({ bug_key: 'RHAIRFE-123', category: 'FEATURE_REQUEST' })
     ]))
     expect(response.body.newProductBugs).toEqual(expect.arrayContaining([
       expect.objectContaining({ bug_key: 'RHOAIENG-1', category: 'PRODUCT_BUG' }),
       expect.objectContaining({ bug_key: 'RHOAIENG-3', category: 'UX_DEFECT' }),
-      expect.objectContaining({ bug_key: 'RHAIRFE-123', category: 'RFE' })
+      expect.objectContaining({ bug_key: 'RHAIRFE-123', category: 'FEATURE_REQUEST' })
     ]))
     expect(response.body.knownProductBugs).toEqual([expect.objectContaining({ bug_key: 'RHOAIENG-2' })])
     expect(response.body).not.toHaveProperty('failedTests')

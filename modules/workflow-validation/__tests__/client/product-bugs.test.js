@@ -9,7 +9,7 @@ describe('issue visibility', () => {
     expect(hasJiraId(linked)).toBe(true)
     expect(isVisibleJiraIssue(linked)).toBe(true)
     expect(isVisibleJiraIssue(unlinked)).toBe(false)
-    expect(isVisibleJiraIssue({ category: 'RFE', bug_key: 'RHAIRFE-123' })).toBe(true)
+    expect(isVisibleJiraIssue({ category: 'FEATURE_REQUEST', bug_key: 'RHAIRFE-123' })).toBe(true)
     expect(isVisibleJiraIssue({ category: 'FUTURE_CATEGORY', bug_key: 'RHOAIENG-234' })).toBe(true)
     expect(isVisibleFinding(unlinked)).toBe(true)
   })

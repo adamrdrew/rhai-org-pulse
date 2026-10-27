@@ -29,6 +29,11 @@ const mockCharts = {
     category: 'PRODUCT_BUG', action: 'FILED', opened: true,
     error_summary: 'Deployment failed during validation', workflow: 'fraud_detection',
     rhoai_version: '3.5.18', timestamp: '2026-08-04T20:03:06.825Z'
+  }, {
+    id: 'rca-rfe', bug_key: 'RHAIRFE-123', jira_url: 'https://issues.example/RHAIRFE-123',
+    category: 'FEATURE_REQUEST', action: 'FILED', opened: true,
+    error_summary: 'Requested workflow enhancement', workflow: 'fraud_detection',
+    rhoai_version: '3.5.18', timestamp: '2026-08-04T20:03:06.825Z'
   }],
   knownProductBugs: [{
     id: 'rca-2', bug_key: 'RHOAIENG-789', jira_url: 'https://issues.example/RHOAIENG-789',
@@ -44,6 +49,9 @@ const mockCharts = {
     productBugs: [{
       id: 'issue-1', category: 'PRODUCT_BUG', action: 'FILED', opened: true,
       bug_key: 'RHOAIENG-456', jira_url: 'https://issues.example/RHOAIENG-456'
+    }, {
+      id: 'issue-rfe', category: 'FEATURE_REQUEST', action: 'FILED', opened: true,
+      bug_key: 'RHAIRFE-123', jira_url: 'https://issues.example/RHAIRFE-123'
     }]
   }, {
     id: 'failed-2', execution_id: 'failed-2', workflow_label: 'Known Product Defect', verdict: 'FAIL',
@@ -167,6 +175,7 @@ describe('Workflow Validation OverviewView', () => {
     expect(wrapper.text()).not.toContain('2 tasks failed')
     expect(wrapper.text()).not.toContain('Duration')
     expect(wrapper.text()).toContain('RHOAIENG-456 — New product bug opened.')
+    expect(wrapper.text()).toContain('RHAIRFE-123 — New feature request opened.')
     expect(wrapper.get('a[href="https://issues.example/RHOAIENG-456"]').text()).toBe('RHOAIENG-456')
     expect(wrapper.text()).toContain('RHOAIENG-789 — Pre-existing product bug detected.')
     expect(wrapper.findAll('[role="img"][aria-label="No Jira-linked issue recorded."]')).toHaveLength(2)
@@ -179,6 +188,7 @@ describe('Workflow Validation OverviewView', () => {
   it('explains each Jira issue state with a tooltip', () => {
     const tooltips = wrapper.findAll('[title]').map((node) => node.attributes('title'))
     expect(tooltips).toContain('A new product bug was detected. RHOAIENG-456 has been opened.')
+    expect(tooltips).toContain('A new feature request was detected. RHAIRFE-123 has been opened.')
     expect(tooltips).toContain('The test encountered an already reported product bug. No new issue was opened.')
     expect(tooltips).not.toContain('A Jira issue exists for this product bug, but its ID is missing from Org Pulse. This may indicate a data import problem or a problem publishing the telemetry.')
     expect(tooltips).toContain('The test failed or was terminated without a Jira-linked issue recorded.')
@@ -188,6 +198,7 @@ describe('Workflow Validation OverviewView', () => {
     expect(wrapper.text()).toContain('New Jira Issues Opened')
     expect(wrapper.text()).toContain('Jira issues first opened during this test run.')
     expect(wrapper.text()).toContain('RHOAIENG-123')
+    expect(wrapper.text()).toContain('RHAIRFE-123')
     expect(wrapper.text()).toContain('Existing Jira Issues Encountered')
     expect(wrapper.text()).toContain('Previously reported Jira issues encountered again during this test run; no new issue was opened.')
     expect(wrapper.text()).toContain('RHOAIENG-789')
