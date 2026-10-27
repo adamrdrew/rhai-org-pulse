@@ -91,11 +91,11 @@ Important rules:
   `run_id` only when `invocation_id` is absent.
 - Root causes may not have a Jira key.
 - Stakeholder-facing issue lists, charts, counts, and outcome classification
-  include Jira-linked root causes of any category except `ENVIRONMENT` and
-  `CREDENTIAL_EXPOSURE`. This includes `FEATURE_REQUEST` findings (RFEs), and
-  new categories are included automatically when they have a Jira key. Run
-  detail and workflow history retain non-Jira root-cause
-  findings except those two hidden categories.
+  include Jira-linked root causes of any category except `ENVIRONMENT`,
+  `CREDENTIAL_EXPOSURE`, `MISSING_PRECONDITION`, and `AUTOMATION_BUG`. This
+  includes `FEATURE_REQUEST` findings (RFEs), and new categories are included
+  automatically when they have a Jira key. Run detail and workflow history
+  retain non-Jira root-cause findings except those four hidden categories.
 - Missing fields mean unknown unless their documented business meaning says
   otherwise.
 - The dashboard always presents one bounded test run. It defaults to

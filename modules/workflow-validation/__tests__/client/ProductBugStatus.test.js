@@ -22,7 +22,6 @@ describe('ProductBugStatus', () => {
     ['UX_DEFECT', 'FILED', 'New UX defect opened.'],
     ['UX_DEFECT', 'EXISTING', 'Pre-existing UX defect detected.'],
     ['FEATURE_REQUEST', 'FILED', 'New feature request opened.'],
-    ['AUTOMATION_BUG', 'EXISTING', 'Pre-existing test automation defect detected.'],
   ])('keeps the Jira link and explanation for a %s with action %s', (category, action, description) => {
     const wrapper = mount(ProductBugStatus, { props: {
       verdict: 'FAIL', findings: [{
@@ -36,6 +35,16 @@ describe('ProductBugStatus', () => {
     expect(link.attributes('href')).toBe('https://redhat.atlassian.net/browse/RHOAIENG-123')
     expect(wrapper.text()).toContain(description)
     expect(wrapper.find('[role="img"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it.each(['MISSING_PRECONDITION', 'AUTOMATION_BUG'])('does not present %s as a Jira issue', (category) => {
+    const wrapper = mount(ProductBugStatus, { props: {
+      verdict: 'FAIL', findings: [{ category, bug_key: 'RHOAIENG-123' }],
+    } })
+
+    expect(wrapper.find('a').exists()).toBe(false)
+    expect(wrapper.get('[role="img"]').attributes('aria-label')).toBe('No Jira-linked issue recorded.')
     wrapper.unmount()
   })
 })

@@ -39,7 +39,9 @@ function safe(handler) {
 
 const bucketList = (agg) => (agg && agg.buckets ? agg.buckets : []);
 const valueOrNull = (agg) => agg?.value ?? null;
-const HIDDEN_ISSUE_CATEGORIES = ['ENVIRONMENT', 'CREDENTIAL_EXPOSURE'];
+const HIDDEN_ISSUE_CATEGORIES = [
+  'ENVIRONMENT', 'CREDENTIAL_EXPOSURE', 'MISSING_PRECONDITION', 'AUTOMATION_BUG'
+];
 
 function decodeCursor(value) {
   if (!value) return null;
@@ -900,7 +902,7 @@ module.exports = function registerRoutes(router, context) {
    * @openapi
    * /api/modules/workflow-validation/bugs:
    *   get:
-   *     summary: Paginated Jira-linked issue list, excluding environment and credential findings
+   *     summary: Paginated Jira-linked issue list, excluding environment, credential, precondition, and automation findings
    *     tags: [Workflow Validation]
    *     parameters:
    *       - { in: query, name: version, schema: { type: string } }

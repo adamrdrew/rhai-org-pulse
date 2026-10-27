@@ -83,10 +83,16 @@ test.describe('Workflow Validation module @workflow-validation', () => {
           run: { execution_id: 'opaque-id', workflow: 'live-workflow', workflow_label: 'Live workflow', verdict: 'PASS', tasks_failed: 1, summary_text: '**Rendered summary**\n\n- List item' },
           tasks: [{ task_execution_id: 'task-1', task: 'AI judged task', status: 'FAIL', passed: false }],
           bugs: [{
-            id: 'finding-1', category: 'AUTOMATION_BUG', action: 'NONE',
+            id: 'finding-1', category: 'SPEC_DEFECT', action: 'NONE',
             error_summary: 'Harness cleanup failed', severity: 'minor', reproducibility: 'always',
             reasoning: 'The failure occurred during automated cleanup.', workaround: 'Retry cleanup manually.',
             suggested_remediation: 'Refresh the resource before updating it.'
+          }, {
+            id: 'finding-2', category: 'AUTOMATION_BUG', action: 'NONE',
+            error_summary: 'Hidden automation finding'
+          }, {
+            id: 'finding-3', category: 'MISSING_PRECONDITION', action: 'NONE',
+            error_summary: 'Hidden precondition finding'
           }]
         }
       }
@@ -430,6 +436,8 @@ test.describe('Workflow Validation module @workflow-validation', () => {
     await page.getByText('Finding details').click()
     await expect(page.getByText('The failure occurred during automated cleanup.')).toBeVisible()
     await expect(page.getByText('Retry cleanup manually.')).toBeVisible()
+    await expect(page.getByText('Hidden automation finding')).toHaveCount(0)
+    await expect(page.getByText('Hidden precondition finding')).toHaveCount(0)
 
     await page.goto('/#/workflow-validation/workflow-history?workflow=live-workflow')
     await expect(page.getByRole('heading', { name: 'Live workflow' })).toBeVisible()

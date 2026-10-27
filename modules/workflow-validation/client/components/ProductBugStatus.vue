@@ -50,7 +50,6 @@ function issueName(issue) {
   if (issue.category === 'PRODUCT_BUG') return 'product bug'
   if (issue.category === 'FEATURE_REQUEST' || issue.category === 'RFE') return 'feature request'
   if (issue.category === 'SPEC_DEFECT') return 'test specification defect'
-  if (issue.category === 'AUTOMATION_BUG') return 'test automation defect'
   return 'Jira issue'
 }
 

@@ -14,8 +14,8 @@ describe('issue visibility', () => {
     expect(isVisibleFinding(unlinked)).toBe(true)
   })
 
-  it('hides environment and credential exposure findings', () => {
-    for (const category of ['ENVIRONMENT', 'CREDENTIAL_EXPOSURE']) {
+  it('hides known non-issue findings', () => {
+    for (const category of ['ENVIRONMENT', 'CREDENTIAL_EXPOSURE', 'MISSING_PRECONDITION', 'AUTOMATION_BUG']) {
       const finding = { category, bug_key: 'RHOAIENG-456' }
       expect(isHiddenIssueCategory(category)).toBe(true)
       expect(isVisibleJiraIssue(finding)).toBe(false)
@@ -24,7 +24,7 @@ describe('issue visibility', () => {
   })
 
   it('retains non-Jira diagnostic findings in other categories', () => {
-    expect(isVisibleFinding({ category: 'AUTOMATION_BUG' })).toBe(true)
-    expect(isVisibleJiraIssue({ category: 'AUTOMATION_BUG' })).toBe(false)
+    expect(isVisibleFinding({ category: 'SPEC_DEFECT' })).toBe(true)
+    expect(isVisibleJiraIssue({ category: 'SPEC_DEFECT' })).toBe(false)
   })
 })

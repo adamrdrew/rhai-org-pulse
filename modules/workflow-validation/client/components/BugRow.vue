@@ -73,8 +73,7 @@ defineEmits(['open-test'])
 const issueOutcome = computed(() => {
   if (!hasJiraId(props.bug)) return {
     label: {
-      SPEC_DEFECT: 'Test specification defect',
-      AUTOMATION_BUG: 'Test automation defect'
+      SPEC_DEFECT: 'Test specification defect'
     }[props.bug.category] || 'Root-cause finding',
     detail: 'This finding has no linked Jira issue.',
     tone: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200'
@@ -113,7 +112,6 @@ const accent = computed(() => {
   const c = String(props.bug.category || '').toUpperCase()
   if (c === 'PRODUCT_BUG' || c === 'UX_DEFECT') return 'border-red-500'
   if (c === 'SPEC_DEFECT') return 'border-yellow-500'
-  if (c === 'AUTOMATION_BUG') return 'border-purple-500'
   return 'border-gray-300 dark:border-gray-600'
 })
 </script>

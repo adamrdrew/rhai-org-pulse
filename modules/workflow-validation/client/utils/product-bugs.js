@@ -3,7 +3,8 @@ export function hasJiraId(finding = {}) {
 }
 
 export function isHiddenIssueCategory(category) {
-  return ['ENVIRONMENT', 'CREDENTIAL_EXPOSURE'].includes(String(category || '').toUpperCase())
+  return ['ENVIRONMENT', 'CREDENTIAL_EXPOSURE', 'MISSING_PRECONDITION', 'AUTOMATION_BUG']
+    .includes(String(category || '').toUpperCase())
 }
 
 export function isVisibleJiraIssue(finding = {}) {

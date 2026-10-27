@@ -198,7 +198,9 @@ describe('workflow-validation live schema routes', () => {
     expect(response.statusCode).toBe(200)
     expect(query.bool.filter).toContainEqual({ exists: { field: 'bug_key' } })
     expect(query.bool.filter).toContainEqual({
-      bool: { must_not: [{ terms: { category: ['ENVIRONMENT', 'CREDENTIAL_EXPOSURE'] } }] }
+      bool: { must_not: [{ terms: { category: [
+        'ENVIRONMENT', 'CREDENTIAL_EXPOSURE', 'MISSING_PRECONDITION', 'AUTOMATION_BUG'
+      ] } }] }
     })
     expect(JSON.stringify(query)).not.toContain('PRODUCT_BUG')
     expect(JSON.stringify(query)).not.toContain('UX_DEFECT')
@@ -251,6 +253,8 @@ describe('workflow-validation live schema routes', () => {
       expect(url).toContain(`/${BUGS_INDEX}/`)
       expect(body.query.bool.filter).toContainEqual({ term: { run_id: 'invocation-1' } })
       expect(JSON.stringify(body.query)).toContain('CREDENTIAL_EXPOSURE')
+      expect(JSON.stringify(body.query)).toContain('MISSING_PRECONDITION')
+      expect(JSON.stringify(body.query)).toContain('AUTOMATION_BUG')
       expect(JSON.stringify(body.query)).toContain('workflow-a')
       expect(JSON.stringify(body.query)).toContain('impacted_workflows')
       return Promise.resolve(jsonResponse({ hits: { hits: [{
@@ -482,6 +486,8 @@ describe('workflow-validation live schema routes', () => {
     expect(rootCauseQueries.some((query) => JSON.stringify(query).includes('invocation-1'))).toBe(true)
     expect(rootCauseQueries.some((query) => JSON.stringify(query).includes('ENVIRONMENT'))).toBe(true)
     expect(rootCauseQueries.some((query) => JSON.stringify(query).includes('CREDENTIAL_EXPOSURE'))).toBe(true)
+    expect(rootCauseQueries.some((query) => JSON.stringify(query).includes('MISSING_PRECONDITION'))).toBe(true)
+    expect(rootCauseQueries.some((query) => JSON.stringify(query).includes('AUTOMATION_BUG'))).toBe(true)
     expect(rootCauseQueries.every((query) => !JSON.stringify(query).includes('PRODUCT_BUG'))).toBe(true)
     expect(rootCauseQueries.every((query) => !JSON.stringify(query).includes('UX_DEFECT'))).toBe(true)
     expect(rootCauseQueries.every((query) => JSON.stringify(query).includes('bug_key'))).toBe(true)

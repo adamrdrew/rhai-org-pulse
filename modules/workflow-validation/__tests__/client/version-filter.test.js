@@ -67,6 +67,8 @@ describe('workflow-validation default version filter', () => {
     expect(displayedTestOutcome({ verdict: 'FAIL', productBugs: [{ category: 'PRODUCT_BUG' }] })).toBe('SKIP')
     expect(displayedTestOutcome({ verdict: 'ERROR', productBugs: [{ category: 'ENVIRONMENT' }] })).toBe('SKIP')
     expect(displayedTestOutcome({ verdict: 'FAIL', productBugs: [{ category: 'CREDENTIAL_EXPOSURE', bug_key: 'RHOAIENG-5' }] })).toBe('SKIP')
+    expect(displayedTestOutcome({ verdict: 'FAIL', productBugs: [{ category: 'MISSING_PRECONDITION', bug_key: 'RHOAIENG-6' }] })).toBe('SKIP')
+    expect(displayedTestOutcome({ verdict: 'FAIL', productBugs: [{ category: 'AUTOMATION_BUG', bug_key: 'RHOAIENG-7' }] })).toBe('SKIP')
     expect(displayedOutcomeCounts([
       { verdict: 'PASS' },
       { verdict: 'FAIL', productBugs: [{ category: 'PRODUCT_BUG', bug_key: 'RHOAIENG-1' }] },
